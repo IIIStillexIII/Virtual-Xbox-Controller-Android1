@@ -407,13 +407,21 @@ class MainActivity : ComponentActivity() {
     private fun isEvdevGamepadCandidate(device: UsbDevice): Boolean {
         return (0 until device.interfaceCount).any { index ->
             val intf = device.getInterface(index)
-            if (intf.interfaceClass != android.hardware.usb.UsbConstants.USB_CLASS_HID) {
-                false
-            } else {
-                // USB boot subclass/protocol 1/1 and 1/2 are the standard keyboard
-                // and mouse interfaces. Exclude them before choosing a VID/PID filter;
-                // the native evdev capability check remains the final gamepad test.
-                !(intf.interfaceSubclass == 1 && intf.interfaceProtocol in 1..2)
+            when (intf.interfaceClass) {
+                android.hardware.usb.UsbConstants.USB_CLASS_HID -> {
+                    // USB boot subclass/protocol 1/1 and 1/2 are the standard keyboard
+                    // and mouse interfaces. Exclude them before choosing a VID/PID filter;
+                    // the native evdev capability check remains the final gamepad test.
+                    !(intf.interfaceSubclass == 1 && intf.interfaceProtocol in 1..2)
+                }
+                android.hardware.usb.UsbConstants.USB_CLASS_VENDOR_SPEC -> {
+                    // Many USB XInput controllers expose a vendor-specific (0xFF)
+                    // interface rather than USB HID. Accept it as a candidate only;
+                    // the native evdev reader still validates actual gamepad capabilities
+                    // and matches the physical device by VID/PID before consuming events.
+                    true
+                }
+                else -> false
             }
         }
     }
