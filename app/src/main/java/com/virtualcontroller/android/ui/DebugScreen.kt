@@ -1,5 +1,10 @@
 package com.virtualcontroller.android.ui
 
+import android.content.Context
+import android.hardware.input.InputManager
+import android.os.Handler
+import android.os.Looper
+import android.view.InputDevice
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -11,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -48,6 +54,26 @@ fun DebugScreen(onBack: () -> Unit) {
 
     val state = s ?: SteamControllerState()
 
+    // Read Android's actual InputReader view of attached devices. A successful uinput
+    // create call alone does not prove Android classified the virtual device as a gamepad.
+    val context = LocalContext.current
+    val inputManager = remember(context) {
+        context.getSystemService(Context.INPUT_SERVICE) as InputManager
+    }
+    var androidInputDevices by remember { mutableStateOf(readAndroidInputDevices(inputManager)) }
+    fun refreshAndroidInputDevices() {
+        androidInputDevices = readAndroidInputDevices(inputManager)
+    }
+    DisposableEffect(inputManager) {
+        val listener = object : InputManager.InputDeviceListener {
+            override fun onInputDeviceAdded(deviceId: Int) = refreshAndroidInputDevices()
+            override fun onInputDeviceRemoved(deviceId: Int) = refreshAndroidInputDevices()
+            override fun onInputDeviceChanged(deviceId: Int) = refreshAndroidInputDevices()
+        }
+        inputManager.registerInputDeviceListener(listener, Handler(Looper.getMainLooper()))
+        onDispose { inputManager.unregisterInputDeviceListener(listener) }
+    }
+
     // Nothing here is clickable, so without this the D-pad has nothing to move to and a TV
     // remote could never scroll past the first card.
     val readOnlyFocus = Modifier.focusRing(SectionShape).focusable()
@@ -64,6 +90,27 @@ fun DebugScreen(onBack: () -> Unit) {
     ) {
         ScreenHeader(stringResource(R.string.debug_title), subtitle = stringResource(R.string.debug_readonly_notice), onBack = onBack) {
             Pill("$hz Hz")
+        }
+
+        SectionTitle("Android input devices")
+        SectionCard(readOnlyFocus) {
+            Column(
+                Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Devices reported by Android", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                    TextButton(onClick = ::refreshAndroidInputDevices) { Text("Refresh") }
+                }
+                if (androidInputDevices.isEmpty()) {
+                    Text("No input devices reported", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    androidInputDevices.forEachIndexed { index, info ->
+                        if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Text(info, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                    }
+                }
+            }
         }
 
         SectionTitle("Buttons", painterResource(R.drawable.ic_gamepad))
@@ -133,6 +180,32 @@ fun DebugScreen(onBack: () -> Unit) {
         Spacer(Modifier.height(16.dp))
     }
 }
+
+private fun readAndroidInputDevices(inputManager: InputManager): List<String> =
+    inputManager.inputDeviceIds.mapNotNull { id ->
+        val device = inputManager.getInputDevice(id) ?: return@mapNotNull null
+        val supportsGamepad = device.supportsSource(InputDevice.SOURCE_GAMEPAD)
+        val supportsJoystick = device.supportsSource(InputDevice.SOURCE_JOYSTICK)
+        val supportsDpad = device.supportsSource(InputDevice.SOURCE_DPAD)
+        val ranges = device.motionRanges
+            .filter { range ->
+                range.axis in setOf(
+                    android.view.MotionEvent.AXIS_X, android.view.MotionEvent.AXIS_Y,
+                    android.view.MotionEvent.AXIS_Z, android.view.MotionEvent.AXIS_RX,
+                    android.view.MotionEvent.AXIS_RY, android.view.MotionEvent.AXIS_RZ,
+                    android.view.MotionEvent.AXIS_HAT_X, android.view.MotionEvent.AXIS_HAT_Y,
+                    android.view.MotionEvent.AXIS_LTRIGGER, android.view.MotionEvent.AXIS_RTRIGGER
+                )
+            }
+            .joinToString { range -> "AXIS_${range.axis}:${range.min.toInt()}..${range.max.toInt()}" }
+        buildString {
+            append("#$id ${device.name}")
+            append("\n  VID=0x%04X PID=0x%04X virtual=%s".format(device.vendorId, device.productId, device.isVirtual))
+            append("\n  sources=0x%X gamepad=%s joystick=%s dpad=%s".format(device.sources, supportsGamepad, supportsJoystick, supportsDpad))
+            append("\n  axes=${ranges.ifEmpty { "none" }}")
+            append("\n  descriptor=${device.descriptor}")
+        }
+    }.sorted()
 
 @Composable
 private fun Chip(label: String, active: Boolean) {
