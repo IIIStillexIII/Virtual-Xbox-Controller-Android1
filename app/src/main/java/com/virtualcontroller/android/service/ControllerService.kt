@@ -196,24 +196,36 @@ class ControllerService : Service() {
             return
         }
 
-        Log.i(TAG, "Auto-switch → '${bound.name}' (foreground=$current, activeMatches=$activeMatches, liveMatches=$liveProfileMatches)")
-        Prefs.applyNamedProfile(this, bound)
-        announceProfileLoaded(bound.name)
+        if (mode == InjectionMode.UINPUT && profileSwitchInFlight) {
+            Log.i(TAG, "Auto-switch skipped: another profile switch is in progress")
+            return
+        }
 
-        // Live-swap the gamepad profile (skip if not in uinput mode).
-        if (mode == InjectionMode.UINPUT && !profileSwitchInFlight) {
+        Log.i(TAG, "Auto-switch → '${bound.name}' (foreground=$current, activeMatches=$activeMatches, liveMatches=$liveProfileMatches)")
+        val previousProfile = Prefs.getProfile(this)
+        Prefs.applyNamedProfile(this, bound)
+
+        // Live-swap the virtual device before advertising the new profile as active.
+        if (mode == InjectionMode.UINPUT) {
             profileSwitchInFlight = true
             scope.launch {
                 try {
                     val gp = com.virtualcontroller.android.uinput.GamepadProfile.fromId(bound.profileId)
-                    uinput.switchProfile(gp)
-                    _profileFlow.value = bound.profileId
+                    if (uinput.switchProfile(gp)) {
+                        announceProfileLoaded(bound.name)
+                        _profileFlow.value = bound.profileId
+                    } else {
+                        Log.w(TAG, "Auto-switch to '${bound.name}' failed; restoring ${previousProfile.displayName}")
+                        Prefs.setProfile(this@ControllerService, previousProfile)
+                        _profileFlow.value = previousProfile.id
+                    }
                     refreshNotification()
                 } finally {
                     profileSwitchInFlight = false
                 }
             }
         } else {
+            announceProfileLoaded(bound.name)
             _profileFlow.value = bound.profileId
             refreshNotification()
         }
