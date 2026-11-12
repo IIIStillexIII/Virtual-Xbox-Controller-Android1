@@ -36,6 +36,8 @@ class RootUInputDaemon private constructor() {
 
         @JvmStatic
         fun main(args: Array<String>) {
+            val expectedAppUid = args.firstOrNull()?.toIntOrNull()
+                ?: throw IllegalArgumentException("Expected app UID argument")
             try {
                 // Force JNI load before announcing that the daemon is ready.
                 UInputNative.canOpen()
@@ -43,6 +45,10 @@ class RootUInputDaemon private constructor() {
                     Thread({
                         try {
                             inputServer.accept().use { inputClient ->
+                                val peerUid = inputClient.peerCredentials.uid
+                                require(peerUid == expectedAppUid) {
+                                    "Rejected root input socket peer uid=$peerUid"
+                                }
                                 val stream = DataOutputStream(inputClient.outputStream)
                                 inputOutput = stream
                                 stream.writeInt(MAGIC)
@@ -62,7 +68,7 @@ class RootUInputDaemon private constructor() {
                             Log.e(TAG, "accept failed", t)
                             break
                         }
-                        val keepRunning = handleClient(client)
+                        val keepRunning = handleClient(client, expectedAppUid)
                         if (!keepRunning) break
                     }
                     }
@@ -116,8 +122,13 @@ class RootUInputDaemon private constructor() {
         private fun isAllowedRootOutputCommand(command: List<String>): Boolean =
             command == listOf("settings", "get", "secure", "show_ime_with_hard_keyboard")
 
-        private fun handleClient(socket: LocalSocket): Boolean {
+        private fun handleClient(socket: LocalSocket, expectedAppUid: Int): Boolean {
             socket.use { client ->
+                val peerUid = client.peerCredentials.uid
+                if (peerUid != expectedAppUid) {
+                    Log.w(TAG, "Rejected root control socket peer uid=$peerUid")
+                    return true
+                }
                 val input = DataInputStream(client.inputStream)
                 val output = DataOutputStream(client.outputStream)
                 try {
