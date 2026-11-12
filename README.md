@@ -8,6 +8,12 @@ This is **my development fork**, not the original repository. The original upstr
 
 The goal of this fork is to keep the original Virtual Xbox Controller app and its overall design as close to upstream as practical, while improving it into a reliable system-wide controller bridge for Android. A generic physical gamepad connected over USB or Bluetooth should be mapped to one of exactly two virtual controller profiles — **Xbox Series X|S** or **PlayStation 5 DualSense** — so Android and games that support those controller input paths can recognize and use it as a gamepad. The app must also retain **Desktop mode**, use the **root backend first** with **Shizuku as a fallback**, and provide complete practical mapping for buttons, sticks, triggers and D-pad.
 
+### Original project remains the foundation
+
+This fork must remain based on the original **Virtual Xbox Controller for Android** project by [misakidebugged](https://github.com/misakidebugged/Virtual-Xbox-Controller-Android). The original project's application structure, core architecture, established input and service flows, existing features, and visual design are the foundation of this fork and should be preserved wherever practical.
+
+Development should extend and improve that original foundation through focused, compatible changes. It should not replace the original app with a separately designed or unrelated implementation, rewrite working subsystems without a demonstrated need, or remove existing functionality simply to introduce the new controller profiles. New mapping and compatibility capabilities should be integrated into the existing project structure while keeping its original behavior and identity intact. Any necessary architectural change should be limited to the smallest practical scope and preserve existing features, including Desktop mode.
+
 A key target for compatibility testing is **Call of Duty: Mobile (CODM)**, alongside other Android games with controller support. The objective is genuine system-level input-device recognition, **not** an on-screen overlay or touch-control/macro mapping. CODM compatibility is a target to verify on real devices; it is not claimed as guaranteed, and this project does not attempt to bypass a game's anti-cheat or controller restrictions.
 
 This is a specialized fork of the original Virtual Xbox Controller project. The current fork focuses on two virtual gamepad profiles:
