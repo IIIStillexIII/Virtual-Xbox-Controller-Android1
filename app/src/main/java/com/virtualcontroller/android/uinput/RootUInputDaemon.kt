@@ -91,7 +91,13 @@ class RootUInputDaemon private constructor() {
             }
         }
 
-        private fun readCommand(input: DataInputStream): List<String> {\n            val count = input.readInt()\n            require(count in 1..32) { "Invalid shell argument count: $count" }\n            return List(count) { input.readUTF() }\n        }\n\n        private fun handleClient(socket: LocalSocket): Boolean {
+        private fun readCommand(input: DataInputStream): List<String> {
+            val count = input.readInt()
+            require(count in 1..32) { "Invalid shell argument count: $count" }
+            return List(count) { input.readUTF() }
+        }
+
+        private fun handleClient(socket: LocalSocket): Boolean {
             socket.use { client ->
                 val input = DataInputStream(client.inputStream)
                 val output = DataOutputStream(client.outputStream)
