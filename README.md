@@ -17,6 +17,14 @@ This is a specialized fork of the original Virtual Xbox Controller project. The 
 
 **Desktop mode** is a separate input mode for mouse/keyboard-style navigation. It is not a third virtual gamepad profile.
 
+### CODM compatibility objective: make different physical gamepads usable
+
+Call of Duty: Mobile does not accept every physical gamepad as a supported controller; compatibility is limited to controller families the game recognizes, such as Xbox and PlayStation controllers. The central purpose of this fork is to bridge that gap: take input from as many different physical USB and Bluetooth gamepads as the Android device can read, translate their controls into the selected Xbox Series X|S or PS5 DualSense profile, and expose that profile as a system-level virtual input device for the game.
+
+In practical terms, the intended result is that a player can use a supported generic or third-party physical gamepad in CODM through the virtual Xbox or DualSense profile, even when CODM would not recognize that physical gamepad directly. This requires correct input translation and compatible virtual-device behavior — not merely changing the displayed device name or identifiers. The goal is to achieve this without touch overlays, touch injection, macros, or bypassing anti-cheat or game restrictions.
+
+This is a development and real-device validation target, **not a claim that every controller or Android device already works**. Success must be checked with different physical controllers on actual Android devices and CODM versions. The virtual `uinput` device may not reproduce every hardware/protocol characteristic of a genuine Xbox or PlayStation controller, which can limit recognition.
+
 ## How it works
 
 ```
