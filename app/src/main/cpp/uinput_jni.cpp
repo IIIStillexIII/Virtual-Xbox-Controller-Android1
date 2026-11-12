@@ -562,6 +562,7 @@ static std::string g_target_device_filter = "ANY";
 static int g_target_vendor = -1;
 static int g_target_product = -1;
 static bool g_target_bluetooth_only = false;
+static bool g_target_usb_only = false;
 
 JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void*) {
     g_jvm = vm;
@@ -971,7 +972,8 @@ static void evdev_reader_thread_func() {
 
             struct input_id inputId{};
             if (ioctl(fd, EVIOCGID, &inputId) < 0 ||
-                (g_target_bluetooth_only && inputId.bustype != BUS_BLUETOOTH)) {
+                (g_target_bluetooth_only && inputId.bustype != BUS_BLUETOOTH) ||
+                (g_target_usb_only && inputId.bustype != BUS_USB)) {
                 close(fd);
                 continue;
             }
@@ -1452,6 +1454,7 @@ Java_com_virtualcontroller_android_uinput_UInputNative_startEvdevReader(
     g_target_vendor = -1;
     g_target_product = -1;
     g_target_bluetooth_only = false;
+    g_target_usb_only = false;
     if (deviceFilter) {
         const char* str = env->GetStringUTFChars(deviceFilter, nullptr);
         g_target_device_filter = str ? str : "ANY";
@@ -1478,6 +1481,7 @@ Java_com_virtualcontroller_android_uinput_UInputNative_startEvdevReader(
         if (sscanf(g_target_device_filter.c_str(), "VIDPID:%x:%x", &vendor, &product) == 2) {
             g_target_vendor = (int)vendor;
             g_target_product = (int)product;
+            g_target_usb_only = true;
             g_target_device_filter = "";
         }
     }
