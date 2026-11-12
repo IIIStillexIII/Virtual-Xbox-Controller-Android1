@@ -97,6 +97,25 @@ class RootUInputDaemon private constructor() {
             return List(count) { input.readUTF() }
         }
 
+        // The abstract local socket is not an authenticated app boundary. Never let
+        // an arbitrary local client turn this root daemon into a general command runner.
+        // Keep only the exact operations currently required by the app.
+        private fun isAllowedRootCommand(command: List<String>): Boolean {
+            if (command == listOf("settings", "get", "secure", "show_ime_with_hard_keyboard")) return true
+            if (command == listOf("settings", "delete", "secure", "show_ime_with_hard_keyboard")) return true
+            if (command.size == 5 && command.take(4) ==
+                listOf("settings", "put", "secure", "show_ime_with_hard_keyboard") &&
+                command[4] in setOf("0", "1")) return true
+            if (command == listOf("mkdir", "-p", "/sdcard/Pictures/Screenshots")) return true
+            return command.size == 3 &&
+                command[0] == "screencap" &&
+                command[1] == "-p" &&
+                Regex("^/sdcard/Pictures/Screenshots/SteamCtrl_[0-9]{8}_[0-9]{6}\\\\.png$").matches(command[2])
+        }
+
+        private fun isAllowedRootOutputCommand(command: List<String>): Boolean =
+            command == listOf("settings", "get", "secure", "show_ime_with_hard_keyboard")
+
         private fun handleClient(socket: LocalSocket): Boolean {
             socket.use { client ->
                 val input = DataInputStream(client.inputStream)
@@ -154,6 +173,7 @@ class RootUInputDaemon private constructor() {
                             }
                             OP_RUN_SHELL -> {
                                 val command = readCommand(input)
+                                require(isAllowedRootCommand(command)) { "Root command is not allowed" }
                                 val exitCode = ProcessBuilder(command).redirectErrorStream(true).start().let { process ->
                                     process.inputStream.bufferedReader().use { it.readText() }
                                     process.waitFor()
@@ -163,6 +183,7 @@ class RootUInputDaemon private constructor() {
                             }
                             OP_RUN_SHELL_OUTPUT -> {
                                 val command = readCommand(input)
+                                require(isAllowedRootOutputCommand(command)) { "Root output command is not allowed" }
                                 val result = ProcessBuilder(command).redirectErrorStream(true).start().let { process ->
                                     val text = process.inputStream.bufferedReader().use { it.readText() }
                                     process.waitFor()
