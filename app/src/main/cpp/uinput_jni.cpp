@@ -716,6 +716,128 @@ static void evdev_reader_thread_func() {
         dev.axis_valid[axis] = true;
     };
 
+    // After SYN_DROPPED, Linux requires querying the device's current state
+    // once the next SYN_REPORT is received; replaying only future deltas can leave
+    // held controls stuck or silently released.
+    auto resync_device = [&](EvdevFd& dev) {
+        dev.buttons = 0;
+        for (int axis = 0; axis < 6; ++axis) dev.axis_valid[axis] = false;
+
+        unsigned long key_bits[(KEY_MAX + sizeof(unsigned long) * 8) /
+                               (sizeof(unsigned long) * 8)] = {};
+        if (ioctl(dev.fd, EVIOCGKEY(sizeof(key_bits)), key_bits) >= 0) {
+            auto key_down = [&](int code) {
+                return code >= 0 && code <= KEY_MAX &&
+                    (key_bits[code / (sizeof(unsigned long) * 8)] &
+                     (1UL << (code % (sizeof(unsigned long) * 8)))) != 0;
+            };
+            const struct { int code; uint32_t mask; } keys[] = {
+                {BTN_SOUTH, 0x00000001}, {BTN_EAST, 0x00000002},
+                {BTN_NORTH, 0x00000004}, {BTN_WEST, 0x00000008},
+                {BTN_TL, 0x00080000}, {BTN_TR, 0x00000200},
+                {BTN_TL2, 0x08000000}, {BTN_TR2, 0x00800000},
+                {BTN_SELECT, 0x00004000}, {BTN_START, 0x00000040},
+                {BTN_MODE, 0x00010000}, {BTN_THUMBL, 0x00008000},
+                {BTN_THUMBR, 0x00000020},
+                {KEY_UP, 0x00002000}, {KEY_DOWN, 0x00000400},
+                {KEY_LEFT, 0x00001000}, {KEY_RIGHT, 0x00000800},
+                {288, 0x00000001}, {289, 0x00000002},
+                {290, 0x00000004}, {291, 0x00000008},
+                {292, 0x00080000}, {293, 0x00000200},
+                {294, 0x08000000}, {295, 0x00800000},
+                {296, 0x00004000}, {297, 0x00000040},
+                {298, 0x00008000}, {299, 0x00000020},
+                {544, 0x00002000}, {545, 0x00000400},
+                {546, 0x00001000}, {547, 0x00000800},
+                {158, 0x00004000}, {28, 0x00000040}, {172, 0x00010000}
+            };
+            for (const auto& key : keys) {
+                if (key_down(key.code)) dev.buttons |= key.mask;
+            }
+        }
+
+        auto read_abs = [&](int code, const struct input_absinfo& fallback,
+                            bool supported) -> struct input_absinfo {
+            struct input_absinfo info{};
+            if (!supported || ioctl(dev.fd, EVIOCGABS(code), &info) < 0) return fallback;
+            return info;
+        };
+        auto apply_axis = [&](int code, const struct input_absinfo& info) {
+            const int32_t value = info.value;
+            switch (code) {
+                case ABS_X:
+                    set_axis(dev, 0, scale_axis(value, info.minimum, info.maximum, -32767, 32767)); break;
+                case ABS_Y: {
+                    int32_t v = scale_axis(value, info.minimum, info.maximum, -32767, 32767);
+                    set_axis(dev, 1, -v); break;
+                }
+                case ABS_RX:
+                    set_axis(dev, 2, scale_axis(value, info.minimum, info.maximum, -32767, 32767)); break;
+                case ABS_RY: {
+                    int32_t v = scale_axis(value, info.minimum, info.maximum, -32767, 32767);
+                    set_axis(dev, 3, -v); break;
+                }
+                case ABS_Z:
+                    if (!dev.has_rx) {
+                        set_axis(dev, 2, scale_axis(value, info.minimum, info.maximum, -32767, 32767));
+                    } else {
+                        int32_t trigger = scale_axis(value, info.minimum, info.maximum, 0, 32767);
+                        set_axis(dev, 4, trigger);
+                        if (trigger > 16384) dev.buttons |= 0x08000000;
+                    }
+                    break;
+                case ABS_RZ:
+                    if (!dev.has_ry) {
+                        int32_t v = scale_axis(value, info.minimum, info.maximum, -32767, 32767);
+                        set_axis(dev, 3, -v);
+                    } else {
+                        int32_t trigger = scale_axis(value, info.minimum, info.maximum, 0, 32767);
+                        set_axis(dev, 5, trigger);
+                        if (trigger > 16384) dev.buttons |= 0x00800000;
+                    }
+                    break;
+                case ABS_BRAKE: {
+                    int32_t trigger = scale_axis(value, info.minimum, info.maximum, 0, 32767);
+                    set_axis(dev, 4, trigger);
+                    if (trigger > 16384) dev.buttons |= 0x08000000;
+                    break;
+                }
+                case ABS_GAS: {
+                    int32_t trigger = scale_axis(value, info.minimum, info.maximum, 0, 32767);
+                    set_axis(dev, 5, trigger);
+                    if (trigger > 16384) dev.buttons |= 0x00800000;
+                    break;
+                }
+                case ABS_HAT0X:
+                    if (value < 0) dev.buttons |= 0x00001000;
+                    else if (value > 0) dev.buttons |= 0x00000800;
+                    break;
+                case ABS_HAT0Y:
+                    if (value < 0) dev.buttons |= 0x00002000;
+                    else if (value > 0) dev.buttons |= 0x00000400;
+                    break;
+                default: break;
+            }
+        };
+
+        const struct input_absinfo neutral_stick{0, -32768, 32767, 0, 0, 0};
+        const struct input_absinfo neutral_trigger{0, 0, 255, 0, 0, 0};
+        if (dev.has_x) apply_axis(ABS_X, read_abs(ABS_X, neutral_stick, true));
+        if (dev.has_y) apply_axis(ABS_Y, read_abs(ABS_Y, neutral_stick, true));
+        if (dev.has_rx) apply_axis(ABS_RX, read_abs(ABS_RX, neutral_stick, true));
+        if (dev.has_ry) apply_axis(ABS_RY, read_abs(ABS_RY, neutral_stick, true));
+        if (dev.has_z) apply_axis(ABS_Z, read_abs(ABS_Z, neutral_trigger, true));
+        if (dev.has_rz) apply_axis(ABS_RZ, read_abs(ABS_RZ, neutral_trigger, true));
+        if (dev.has_brake) apply_axis(ABS_BRAKE, read_abs(ABS_BRAKE, neutral_trigger, true));
+        if (dev.has_gas) apply_axis(ABS_GAS, read_abs(ABS_GAS, neutral_trigger, true));
+
+        // Hat capabilities are queried separately because they are not stored
+        // in the compact stick/trigger capability flags above.
+        struct input_absinfo hat{};
+        if (ioctl(dev.fd, EVIOCGABS(ABS_HAT0X), &hat) >= 0) apply_axis(ABS_HAT0X, hat);
+        if (ioctl(dev.fd, EVIOCGABS(ABS_HAT0Y), &hat) >= 0) apply_axis(ABS_HAT0Y, hat);
+    };
+
     auto rescan_devices = [&]() {
         for (auto it = open_fds.begin(); it != open_fds.end(); ) {
             if (it->fd < 0) {
@@ -995,7 +1117,13 @@ static void evdev_reader_thread_func() {
                     const auto& ev = evs[k];
 
                     if (dev.dropping) {
-                        if (ev.type == EV_SYN && ev.code == SYN_REPORT) dev.dropping = false;
+                        if (ev.type == EV_SYN && ev.code == SYN_REPORT) {
+                            dev.dropping = false;
+                            resync_device(dev);
+                            recompute_buttons();
+                            recompute_axes();
+                            state_changed = true;
+                        }
                         continue;
                     }
                     if (ev.type == EV_SYN && ev.code == SYN_DROPPED) {
