@@ -19,6 +19,7 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <cctype>
 #include <poll.h>
 #include <sys/inotify.h>
 
