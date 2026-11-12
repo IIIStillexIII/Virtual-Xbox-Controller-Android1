@@ -404,19 +404,27 @@ class MainActivity : ComponentActivity() {
         log("Service started (Bluetooth)")
     }
 
-    private fun isHidUsbDevice(device: UsbDevice): Boolean {
+    private fun isEvdevGamepadCandidate(device: UsbDevice): Boolean {
         return (0 until device.interfaceCount).any { index ->
-            device.getInterface(index).interfaceClass == android.hardware.usb.UsbConstants.USB_CLASS_HID
+            val intf = device.getInterface(index)
+            if (intf.interfaceClass != android.hardware.usb.UsbConstants.USB_CLASS_HID) {
+                false
+            } else {
+                // USB boot subclass/protocol 1/1 and 1/2 are the standard keyboard
+                // and mouse interfaces. Exclude them before choosing a VID/PID filter;
+                // the native evdev capability check remains the final gamepad test.
+                !(intf.interfaceSubclass == 1 && intf.interfaceProtocol in 1..2)
+            }
         }
     }
 
     private fun checkAndRequestUsb() {
         val usbManager = getSystemService(USB_SERVICE) as UsbManager
-        // Keep Steam's vendor-specific transport preferred; other HID devices use evdev
-        // and do not need Android's UsbDeviceConnection permission.
+        // Keep Steam's vendor-specific transport preferred; other non-boot HID interfaces
+        // use evdev and do not need Android's UsbDeviceConnection permission.
         val device = usbManager.deviceList.values.firstOrNull {
             it.vendorId == UsbConnectionManager.STEAM_VID
-        } ?: usbManager.deviceList.values.firstOrNull(::isHidUsbDevice)
+        } ?: usbManager.deviceList.values.firstOrNull(::isEvdevGamepadCandidate)
 
         if (device == null) {
             log("No supported USB controller found")
@@ -444,7 +452,7 @@ class MainActivity : ComponentActivity() {
         if (device.vendorId == UsbConnectionManager.STEAM_VID) {
             log("Steam Controller attached")
             checkPermissionsAndStart()
-        } else if (isHidUsbDevice(device)) {
+        } else if (isEvdevGamepadCandidate(device)) {
             log("USB HID device attached: VID=0x${device.vendorId.toString(16)} PID=0x${device.productId.toString(16)}")
             if (Prefs.getTransport(this) == Transport.USB && !serviceRunning) {
                 startControllerService(device)
