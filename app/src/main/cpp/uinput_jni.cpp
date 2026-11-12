@@ -81,6 +81,8 @@ static const gamepad_profile* find_profile(int id) {
 static int g_fd_gamepad = -1;
 static int g_fd_mouse   = -1;
 static int g_fd_kbd     = -1;
+// DualSense maps Square to BTN_WEST and Triangle to BTN_NORTH.
+static int g_active_profile_id = 0;
 
 // Cached "last frame" state for delta encoding in sendMouseFrame.
 // Reset on every destroy_devices() so a new device starts from a clean slate.
@@ -263,6 +265,7 @@ static void destroy_devices() {
     // Any cached delta-state belonged to the destroyed device — reset.
     g_last_mouse_buttons = 0;
     g_last_kbd_keys = 0;
+    g_active_profile_id = 0;
     if (destroyed) {
         // Give the kernel + InputReader a moment to fully release the input
         // device records. Without this, rapid profile switching can hit transient
@@ -343,6 +346,7 @@ Java_com_virtualcontroller_android_uinput_UInputNative_createDevice(JNIEnv*, jcl
 
     LOGI("Virtual gamepad created (profile=%d), fd=%d", prof->id, fd);
     g_fd_gamepad = fd;
+    g_active_profile_id = prof->id;
 
     // Sidecar mouse + keyboard — non-fatal if either fails (gamepad still works).
     g_fd_mouse = create_mouse_fd(prof->vid, (uint16_t)(prof->pid + 0x100));
@@ -373,8 +377,12 @@ Java_com_virtualcontroller_android_uinput_UInputNative_sendFrame(
     // Bit-to-keycode pairs — order must match XboxDescriptor.kt bit positions.
     // bit 0 = A, 1 = B, 2 = X, 3 = Y, 4 = LB, 5 = RB,
     // 6 = SELECT, 7 = START, 8 = MODE, 9 = THUMBL, 10 = THUMBR
-    static const int bit_to_key[] = {
-        BTN_A, BTN_B, BTN_X, BTN_Y,
+    const int bit_to_key[] = {
+        BTN_A, BTN_B,
+        // Android's DualSense key layout maps Square to BTN_WEST and
+        // Triangle to BTN_NORTH; Xbox uses the opposite Linux X/Y names.
+        g_active_profile_id == 3 ? BTN_WEST : BTN_X,
+        g_active_profile_id == 3 ? BTN_NORTH : BTN_Y,
         BTN_TL, BTN_TR,
         BTN_SELECT, BTN_START, BTN_MODE,
         BTN_THUMBL, BTN_THUMBR
