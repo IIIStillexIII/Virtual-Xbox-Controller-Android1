@@ -6,7 +6,7 @@ This is **my development fork**, not the original repository. The original upstr
 
 ## Project goal
 
-The goal of this fork is to keep the original Virtual Xbox Controller app and its overall design as close to upstream as practical, while improving it into a reliable system-wide controller bridge for Android. A generic physical gamepad connected over USB or Bluetooth should be translated into exactly one of two virtual gamepad profiles: **Xbox Series X|S** or **PlayStation 5 DualSense**. Separately, the app has a **Controller Mode** selector with **Gamepad** and **Desktop (mouse + keyboard)** modes. Desktop is a controller operating mode, not a virtual gamepad profile. The app uses the **root backend first** with **Shizuku as a fallback**, and provides practical mapping for buttons, sticks, triggers and D-pad.
+The goal of this fork is to keep the original Virtual Xbox Controller app and its overall design as close to upstream as practical, while improving it into a reliable system-wide controller bridge for Android. A generic physical gamepad connected over USB or Bluetooth should be translated into exactly one of two virtual gamepad profiles: **Xbox Series X|S** or **PlayStation 5 DualSense**. Separately, the app retains the **original VXCA Desktop Mode** through the **Controller Mode** selector, alongside **Gamepad**. Desktop (mouse + keyboard) is inherited functionality from VXCA, not a new NexPad feature and not a virtual gamepad profile; preserve its existing behavior and improve it only through focused, compatible changes. The app uses the **root backend first** with **Shizuku as a fallback**, and provides practical mapping for buttons, sticks, triggers and D-pad.
 
 ### Original project remains the foundation
 
@@ -32,7 +32,7 @@ This fork intentionally exposes exactly two virtual gamepad profiles:
 Separately, **Controller Mode** has two operating modes:
 
 - **Gamepad** — use the selected Xbox Series X|S or PS5 DualSense virtual gamepad profile.
-- **Desktop (mouse + keyboard)** — use the physical controller for desktop-style mouse/keyboard input.
+- **Desktop (mouse + keyboard)** — the original VXCA Desktop Mode, preserved as an existing Controller Mode for desktop-style mouse/keyboard input.
 
 Desktop is not a third gamepad profile and must not appear in the virtual gamepad profile list. Do not restore Xbox 360, Xbox One, or DualShock 4 profiles.
 
