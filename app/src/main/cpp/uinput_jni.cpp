@@ -726,6 +726,33 @@ static void evdev_reader_thread_func() {
                 continue;
             }
 
+            // Bluetooth "ANY" mode must never grab touchscreens, keyboards, or
+            // other ordinary input devices. Accept only event nodes that expose
+            // recognizable gamepad buttons or a joystick-style axis layout.
+            uint8_t key_bitmask[KEY_MAX / 8 + 1] = {0};
+            uint8_t abs_bitmask[ABS_MAX / 8 + 1] = {0};
+            if (has_key) ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(key_bitmask)), key_bitmask);
+            if (has_abs) ioctl(fd, EVIOCGBIT(EV_ABS, sizeof(abs_bitmask)), abs_bitmask);
+            auto has_key_code = [&](int code) {
+                return (key_bitmask[code / 8] & (1 << (code % 8))) != 0;
+            };
+            auto has_abs_code = [&](int code) {
+                return (abs_bitmask[code / 8] & (1 << (code % 8))) != 0;
+            };
+            const bool has_gamepad_button =
+                has_key_code(BTN_SOUTH) || has_key_code(BTN_EAST) ||
+                has_key_code(BTN_NORTH) || has_key_code(BTN_WEST) ||
+                has_key_code(BTN_GAMEPAD) || has_key_code(BTN_JOYSTICK);
+            const bool has_stick_pair =
+                has_abs_code(ABS_X) && has_abs_code(ABS_Y);
+            const bool has_secondary_stick =
+                (has_abs_code(ABS_RX) && has_abs_code(ABS_RY)) ||
+                (has_abs_code(ABS_HAT0X) && has_abs_code(ABS_HAT0Y));
+            if (!has_gamepad_button && !(has_stick_pair && has_secondary_stick)) {
+                close(fd);
+                continue;
+            }
+
             if (g_target_vendor >= 0 && g_target_product >= 0) {
                 struct input_id inputId{};
                 if (ioctl(fd, EVIOCGID, &inputId) < 0 ||
