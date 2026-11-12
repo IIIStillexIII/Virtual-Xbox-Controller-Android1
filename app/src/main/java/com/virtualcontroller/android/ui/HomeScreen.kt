@@ -184,18 +184,6 @@ private fun ConnectionSection(
 
 @Composable
 private fun ControlModeSection(profile: GamepadProfile, onProfile: (GamepadProfile) -> Unit) {
-    val context = LocalContext.current
-    SectionTitle(stringResource(R.string.main_control_mode_label), painterResource(R.drawable.ic_gamepad))
-    DividedCard(listOf(
-        { ChoiceRow(stringResource(R.string.main_mode_gamepad), !profile.isMouseMode,
-            // Gamepad restores whichever pad the user last picked (Xbox 360 on first run).
-            { if (profile.isMouseMode) onProfile(Prefs.getLastGamepadProfile(context)) },
-            subtitle = "Games see a real controller") },
-        { ChoiceRow(stringResource(R.string.main_mode_desktop), profile.isMouseMode, { onProfile(GamepadProfile.MOUSE) },
-            subtitle = "Mouse and keyboard, for Android TV and apps") },
-    ))
-    if (profile.isMouseMode) return
-
     SectionTitle(stringResource(R.string.main_emulated_controller_label))
     val pads = GamepadProfile.entries.filter { !it.isMouseMode }
     DividedCard(pads.map { pad ->
