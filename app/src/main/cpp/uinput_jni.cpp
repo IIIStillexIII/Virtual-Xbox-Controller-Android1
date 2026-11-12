@@ -880,19 +880,19 @@ static void evdev_reader_thread_func() {
                         open_fds[i].buttons = 0;
                         recompute_buttons();
                         if (open_fds[i].has_x) cur_lx = 0;
-                                            if (open_fds[i].has_y) cur_ly = 0;
-                                            if (open_fds[i].has_rx) cur_rx = 0;
-                                            if (open_fds[i].has_ry) cur_ry = 0;
-                                            if (open_fds[i].has_z) {
-                                                if (open_fds[i].has_rx) cur_lt = 0;
-                                                else cur_rx = 0;
+                        if (open_fds[i].has_y) cur_ly = 0;
+                        if (open_fds[i].has_rx) cur_rx = 0;
+                        if (open_fds[i].has_ry) cur_ry = 0;
+                        if (open_fds[i].has_z) {
+                        if (open_fds[i].has_rx) cur_lt = 0;
+                        else cur_rx = 0;
                                             }
-                                            if (open_fds[i].has_rz) {
-                                                if (open_fds[i].has_ry) cur_rt = 0;
-                                                else cur_ry = 0;
+                        if (open_fds[i].has_rz) {
+                        if (open_fds[i].has_ry) cur_rt = 0;
+                        else cur_ry = 0;
                                             }
-                                            if (open_fds[i].has_brake) cur_lt = 0;
-                                            if (open_fds[i].has_gas) cur_rt = 0;
+                        if (open_fds[i].has_brake) cur_lt = 0;
+                        if (open_fds[i].has_gas) cur_rt = 0;
                         state_changed = true;
                     }
                     continue;
@@ -909,19 +909,19 @@ static void evdev_reader_thread_func() {
                     open_fds[i].buttons = 0;
                     recompute_buttons();
                     if (open_fds[i].has_x) cur_lx = 0;
-                                        if (open_fds[i].has_y) cur_ly = 0;
-                                        if (open_fds[i].has_rx) cur_rx = 0;
-                                        if (open_fds[i].has_ry) cur_ry = 0;
-                                        if (open_fds[i].has_z) {
-                                            if (open_fds[i].has_rx) cur_lt = 0;
-                                            else cur_rx = 0;
+                    if (open_fds[i].has_y) cur_ly = 0;
+                    if (open_fds[i].has_rx) cur_rx = 0;
+                    if (open_fds[i].has_ry) cur_ry = 0;
+                    if (open_fds[i].has_z) {
+                    if (open_fds[i].has_rx) cur_lt = 0;
+                    else cur_rx = 0;
                                         }
-                                        if (open_fds[i].has_rz) {
-                                            if (open_fds[i].has_ry) cur_rt = 0;
-                                            else cur_ry = 0;
+                    if (open_fds[i].has_rz) {
+                    if (open_fds[i].has_ry) cur_rt = 0;
+                    else cur_ry = 0;
                                         }
-                                        if (open_fds[i].has_brake) cur_lt = 0;
-                                        if (open_fds[i].has_gas) cur_rt = 0;
+                    if (open_fds[i].has_brake) cur_lt = 0;
+                    if (open_fds[i].has_gas) cur_rt = 0;
                     state_changed = true;
                     continue;
                 }
