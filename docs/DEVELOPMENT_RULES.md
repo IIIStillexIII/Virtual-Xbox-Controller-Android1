@@ -47,22 +47,23 @@ If no real deficiency or measurable improvement is established, do not change th
 - Do not replace system-level virtual input with touchscreen mapping, touch injection, macros, or overlays.
 - Do not promise universal compatibility. Verify each relevant controller, Android build, backend, and game separately.
 
-## 5. Backend selection: Root / Shizuku / Automatic
+## 5. Backend selection: Root or Shizuku
 
-The app must provide a clear choice of virtual-device injection backend in the existing Settings interface:
+The app must provide a clear, explicit choice of virtual-device injection backend in the existing Settings interface:
 
-- **Root** — explicitly use the existing root-based backend.
-- **Shizuku** — explicitly use the existing Shizuku-based backend.
-- **Automatic** — select an available supported backend according to a documented priority and report which backend was selected and is active.
+- **Root** — use the existing root-based backend only.
+- **Shizuku** — use the existing Shizuku-based backend only.
+
+The user always chooses which privileged execution path the app uses.
 
 This is a backend/permission choice only. It is not a Controller Mode, virtual gamepad profile, physical-controller transport, or separate input engine.
 
 ### Required behavior
 
-1. Persist the user's backend choice across app restarts.
-2. Check backend availability and authorization before attempting to start virtual-device injection.
-3. In explicit Root or Shizuku mode, respect the user's selection. If it is unavailable or unauthorized, show a clear error/status and actionable recovery guidance. Do not silently switch to a different backend.
-4. In Automatic mode, choose only a backend that is actually available and authorized. Report the selected backend clearly; if neither is usable, explain what is missing.
+1. Persist the user's Root/Shizuku choice across app restarts.
+2. Check the selected backend's availability and authorization before attempting to start virtual-device injection.
+3. Respect the explicit selection. If the selected backend is unavailable or unauthorized, show a clear error/status and actionable recovery guidance. Do not silently fall back to the other backend.
+4. Let the user switch to the other backend manually in the existing Settings area.
 5. Handle permission revocation, Shizuku disconnection, root command failure, service restart, and backend shutdown without leaving stale virtual devices or falsely reporting success.
 6. Keep backend-specific code limited to device creation, privileged operations, and lifecycle integration. Both backends must feed the same existing mapping and virtual-profile pipeline.
 7. Reuse and improve the existing Root and Shizuku implementations. Do not create duplicate injection engines, services, mapping pipelines, or parallel settings screens.
