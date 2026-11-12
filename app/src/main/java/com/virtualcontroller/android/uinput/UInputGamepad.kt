@@ -5,7 +5,9 @@ import com.virtualcontroller.android.ipc.IUInputService
 import android.content.ComponentName
 import android.content.Context
 import android.content.ServiceConnection
+import android.hardware.input.InputManager
 import android.os.IBinder
+import android.view.InputDevice
 import android.util.Log
 import com.virtualcontroller.android.Prefs
 import com.virtualcontroller.android.input.DEFAULT_MOUSE_MAPPING
@@ -92,6 +94,66 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
 
     @Volatile private var deviceReady = false
 
+    /**
+     * Verify that Android's InputReader actually published the uinput device.
+     * UI_DEV_CREATE succeeding only confirms kernel-side creation; it does not
+     * prove that Android exposed the expected gamepad to applications.
+     */
+    private fun expectedVirtualDeviceName(target: GamepadProfile): String? = when (target) {
+        GamepadProfile.XBOX -> "Virtual Xbox Controller"
+        GamepadProfile.DUALSENSE -> "Virtual DualSense Controller"
+        else -> null
+    }
+
+    private fun scheduleAndroidInputDeviceVerification(target: GamepadProfile) {
+        Thread({ verifyAndroidInputDevice(target) }, "input-device-verify-${target.id}")
+            .apply { isDaemon = true; start() }
+    }
+
+    private fun verifyAndroidInputDevice(target: GamepadProfile) {
+        val expectedName = expectedVirtualDeviceName(target) ?: return
+        val manager = context.getSystemService(Context.INPUT_SERVICE) as? InputManager ?: return
+        repeat(20) {
+            val device = manager.inputDeviceIds
+                .asSequence()
+                .mapNotNull { manager.getInputDevice(it) }
+                .firstOrNull {
+                    it.vendorId == target.vid &&
+                        it.productId == target.pid &&
+                        it.name == expectedName
+                }
+
+            if (device != null) {
+                val axes = device.motionRanges.map { it.axis }.distinct().sorted()
+                Log.i(
+                    TAG,
+                    "Android InputReader registered profile=${target.displayName}: " +
+                        "id=${device.id} name=${device.name} " +
+                        "vid=0x${device.vendorId.toString(16)} pid=0x${device.productId.toString(16)} " +
+                        "sources=0x${device.sources.toString(16)} " +
+                        "gamepad=${device.supportsSource(InputDevice.SOURCE_GAMEPAD)} " +
+                        "joystick=${device.supportsSource(InputDevice.SOURCE_JOYSTICK)} " +
+                        "axes=${axes.joinToString(",")}"
+                )
+                return
+            }
+
+            try {
+                Thread.sleep(50L)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return
+            }
+        }
+
+        Log.w(
+            TAG,
+            "uinput create succeeded, but Android InputReader did not publish " +
+                "VID=0x${target.vid.toString(16)} PID=0x${target.pid.toString(16)} " +
+                "within 1s"
+        )
+    }
+
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             val svc = IUInputService.Stub.asInterface(binder)
@@ -105,7 +167,10 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
                             val ok = svc.createGamepad(profile.id)
                             deviceReady = ok
                             Log.i(TAG, "Shizuku createGamepad(${profile.displayName}) → $ok")
-                            if (ok) applyShowImeOverride(svc)
+                            if (ok) {
+                                applyShowImeOverride(svc)
+                                scheduleAndroidInputDeviceVerification(profile)
+                            }
                         } else {
                             Log.e(TAG, "Cannot open /dev/uinput from Shizuku shell UID")
                         }
@@ -138,6 +203,7 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
             deviceReady = true
             Thread({ applyShowImeOverride() }, "root-ime-override").apply { isDaemon = true; start() }
             Log.i(TAG, "Root uinput is the active virtual-device backend")
+             scheduleAndroidInputDeviceVerification(profile)
         } else {
             rootBackend.close()
             Log.i(TAG, "Root uinput unavailable; Shizuku will create the virtual device")
@@ -287,6 +353,7 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
             if (ok) {
                 profile = newProfile
                 Log.i(TAG, "Switched profile to ${newProfile.displayName}")
+                scheduleAndroidInputDeviceVerification(newProfile)
             } else {
                 Log.e(TAG, "createGamepad(${newProfile.displayName}) returned false; virtual device is not ready")
             }
