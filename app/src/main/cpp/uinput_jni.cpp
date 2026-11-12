@@ -534,6 +534,8 @@ static jobject g_listener_ref = nullptr;
 static std::atomic<bool> g_evdev_running{false};
 static std::thread g_evdev_thread;
 static std::string g_target_device_filter = "ANY";
+static int g_target_vendor = -1;
+static int g_target_product = -1;
 
 JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void*) {
     g_jvm = vm;
@@ -723,7 +725,15 @@ static void evdev_reader_thread_func() {
                 continue;
             }
 
-            if (g_target_device_filter != "ANY") {
+            if (g_target_vendor >= 0 && g_target_product >= 0) {
+                struct input_id inputId{};
+                if (ioctl(fd, EVIOCGID, &inputId) < 0 ||
+                    inputId.vendor != g_target_vendor ||
+                    inputId.product != g_target_product) {
+                    close(fd);
+                    continue;
+                }
+            } else if (g_target_device_filter != "ANY" && !g_target_device_filter.empty()) {
                 bool match_uniq = !uniq_str.empty() && contains_ic(uniq_str, g_target_device_filter);
                 bool match_name = !name_str.empty() && contains_ic(name_str, g_target_device_filter);
                 if (!match_uniq && !match_name) {
@@ -959,12 +969,26 @@ Java_com_virtualcontroller_android_uinput_UInputNative_startEvdevReader(
 
     if (!listener) return;
     g_listener_ref = env->NewGlobalRef(listener);
+    g_target_vendor = -1;
+    g_target_product = -1;
     if (deviceFilter) {
         const char* str = env->GetStringUTFChars(deviceFilter, nullptr);
         g_target_device_filter = str ? str : "ANY";
         if (str) env->ReleaseStringUTFChars(deviceFilter, str);
     } else {
         g_target_device_filter = "ANY";
+    }
+
+    // USB callers can identify a physical controller by its USB VID/PID. This is
+    // more reliable than matching a localized/product-name string and keeps event
+    // interfaces from other attached controllers out of the same input stream.
+    if (g_target_device_filter.rfind("VIDPID:", 0) == 0) {
+        unsigned int vendor = 0, product = 0;
+        if (sscanf(g_target_device_filter.c_str(), "VIDPID:%x:%x", &vendor, &product) == 2) {
+            g_target_vendor = (int)vendor;
+            g_target_product = (int)product;
+            g_target_device_filter = "";
+        }
     }
 
     g_evdev_running.store(true);
