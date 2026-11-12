@@ -182,7 +182,7 @@ fun DebugScreen(onBack: () -> Unit) {
 }
 
 private fun readAndroidInputDevices(inputManager: InputManager): List<String> =
-    InputDevice.getDeviceIds().mapNotNull { id ->
+    InputDevice.getDeviceIds().asSequence().mapNotNull { id: Int ->
         val device = inputManager.getInputDevice(id) ?: return@mapNotNull null
         val supportsGamepad = device.supportsSource(InputDevice.SOURCE_GAMEPAD)
         val supportsJoystick = device.supportsSource(InputDevice.SOURCE_JOYSTICK)
@@ -205,7 +205,7 @@ private fun readAndroidInputDevices(inputManager: InputManager): List<String> =
             append("\n  axes=${ranges.ifEmpty { "none" }}")
             append("\n  descriptor=${device.descriptor}")
         }
-    }.sorted()
+    }.sorted().toList()
 
 @Composable
 private fun Chip(label: String, active: Boolean) {
