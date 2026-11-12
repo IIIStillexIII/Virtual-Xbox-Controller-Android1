@@ -63,13 +63,14 @@ This is a backend/permission choice only. It is not a Controller Mode, virtual g
 1. Persist the user's Root/Shizuku choice across app restarts.
 2. Check the selected backend's availability and authorization before attempting to start virtual-device injection.
 3. Respect the explicit selection. If the selected backend is unavailable or unauthorized, show a clear error/status and actionable recovery guidance. Do not silently fall back to the other backend.
-4. Let the user switch to the other backend manually in the existing Settings area.
-5. Handle permission revocation, Shizuku disconnection, root command failure, service restart, and backend shutdown without leaving stale virtual devices or falsely reporting success.
-6. Keep backend-specific code limited to device creation, privileged operations, and lifecycle integration. Both backends must feed the same existing mapping and virtual-profile pipeline.
-7. Reuse and improve the existing Root and Shizuku implementations. Do not create duplicate injection engines, services, mapping pipelines, or parallel settings screens.
-8. Keep the UI small and consistent with the original VXCA design: add the selector, readiness/active-backend status, and contextual recovery guidance to the existing Settings area. Do not redesign the app or duplicate existing screens.
-9. Keep backend selection independent of Controller Mode (Gamepad/Desktop), the two virtual profiles (Xbox Series X|S/DualSense), and USB/Bluetooth physical-controller selection.
-10. Test Root and Shizuku independently on real devices where possible. A successful build or an availability check alone does not prove that virtual input reaches Android or is accepted by a game.
+4. Preserve the existing Shizuku `injectInputEvent` compatibility fallback only within Shizuku mode when its `uinput` path cannot start. Clearly label it as legacy event injection, not a virtual `uinput` gamepad, and do not imply it has the same game compatibility.
+5. Let the user switch to the other backend manually in the existing Settings area.
+6. Handle permission revocation, Shizuku disconnection, root command failure, service restart, and backend shutdown without leaving stale virtual devices or falsely reporting success.
+7. Keep backend-specific code limited to device creation, privileged operations, and lifecycle integration. Both backends must feed the same existing mapping and virtual-profile pipeline.
+8. Reuse and improve the existing Root and Shizuku implementations. Do not create duplicate injection engines, services, mapping pipelines, or parallel settings screens.
+9. Keep the UI small and consistent with the original VXCA design: add the selector, readiness/active-backend status, and contextual recovery guidance to the existing Settings area. Do not redesign the app or duplicate existing screens.
+10. Keep backend selection independent of Controller Mode (Gamepad/Desktop), the two virtual profiles (Xbox Series X|S/DualSense), and USB/Bluetooth physical-controller selection.
+11. Test Root and Shizuku independently on real devices where possible. A successful build or an availability check alone does not prove that virtual input reaches Android or is accepted by a game.
 
 If the existing implementation does not yet support all of this behavior, document the gap and implement it incrementally by extending the current backend architecture. Do not claim the selector or any backend behavior is implemented until the code and tests confirm it.
 
