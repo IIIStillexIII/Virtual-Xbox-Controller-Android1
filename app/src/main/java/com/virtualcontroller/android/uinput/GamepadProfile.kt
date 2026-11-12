@@ -7,13 +7,16 @@ enum class GamepadProfile(
     val pid: Int,
     val isMouseMode: Boolean = false
 ) {
-    XBOX_360   (0, "xbox",     0x045E, 0x028E),
-    XBOX_ONE   (1, "Xbox One Controller",     0x045E, 0x02EA),
-    DUALSHOCK_4(2, "Sony DualShock 4",        0x054C, 0x05C4),
-    DUALSENSE  (3, "dualsense",    0x054C, 0x0CE6),
-    MOUSE      (4, "Desktop (mouse + keyboard)", 0x046D, 0xC077, isMouseMode = true);
+    // Keep IDs 0 and 3 so existing saved settings continue to select the same profiles.
+    XBOX     (0, "xbox",     0x045E, 0x0B12),
+    DUALSENSE(3, "dualsense", 0x054C, 0x0CE6),
+
+    // Internal legacy mode retained for compatibility with existing preferences.
+    // It is no longer exposed in the profile picker.
+    MOUSE    (4, "Desktop (mouse + keyboard)", 0x046D, 0xC077, isMouseMode = true);
 
     companion object {
-        fun fromId(id: Int): GamepadProfile = values().firstOrNull { it.id == id } ?: XBOX_360
+        fun fromId(id: Int): GamepadProfile =
+            values().firstOrNull { it.id == id }?.takeUnless { it.isMouseMode } ?: XBOX
     }
 }
