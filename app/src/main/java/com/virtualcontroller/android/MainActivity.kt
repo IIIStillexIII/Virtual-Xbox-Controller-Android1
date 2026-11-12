@@ -272,6 +272,7 @@ class MainActivity : ComponentActivity() {
                                 log("Injection backend selected: ${backend.displayName}; applies on next service start")
                             },
                             serviceRunning = serviceRunning,
+                            shizukuReady = shizukuReady,
                             onOpen = { sub = it },
                             onGithub = ::openGithubRepo,
                             onCheckUpdates = { checkForUpdates(manual = true) },
