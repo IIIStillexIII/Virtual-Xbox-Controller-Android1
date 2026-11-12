@@ -56,8 +56,8 @@ class RootUInputBackend(private val context: Context) {
             }, "root-uinput-log").apply { isDaemon = true; start() }
 
             var connected: LocalSocket? = null
-            repeat(50) {
-                if (process?.isAlive != true) return@repeat
+            for (attempt in 0 until 50) {
+                if (process?.isAlive != true) break
                 try {
                     val candidate = LocalSocket()
                     candidate.connect(
@@ -65,7 +65,7 @@ class RootUInputBackend(private val context: Context) {
                         300
                     )
                     connected = candidate
-                    return@repeat
+                    break
                 } catch (_: Throwable) {
                     Thread.sleep(100)
                 }
