@@ -901,13 +901,16 @@ static void evdev_reader_thread_func() {
             std::string uniq_str(dev_uniq);
             std::string phys_str(dev_phys);
 
-            // Ignore the source Steam Controller's own HID interfaces and our
-            // synthetic output devices. Physical Xbox and DualSense pads must NOT be
-            // filtered here: they are valid source controllers for this bridge.
-            if (name_str.find("Steam Controller") != std::string::npos ||
-                name_str.find("Virtual Xbox Controller") != std::string::npos ||
-                name_str.find("Virtual DualSense Controller") != std::string::npos ||
-                name_str.find("uinput") != std::string::npos) {
+            // Ignore only our known synthetic output nodes. Do not filter by the
+            // broad "Steam Controller" substring: that also hides a real physical
+            // Steam Controller, which is a valid source device for this bridge.
+            const bool is_our_output =
+                name_str == "Steam Controller Mouse" ||
+                name_str == "Steam Controller Keyboard" ||
+                name_str == "Virtual Xbox Controller" ||
+                name_str == "Virtual DualSense Controller" ||
+                name_str.find("uinput") != std::string::npos;
+            if (is_our_output) {
                 close(fd);
                 continue;
             }
