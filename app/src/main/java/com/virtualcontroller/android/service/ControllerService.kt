@@ -365,9 +365,20 @@ class ControllerService : Service() {
     private suspend fun initUsb(device: UsbDevice?): Boolean {
         val dev = device ?: usbManager.findSteamController()
         if (dev == null) {
-            Log.e(TAG, "No Steam Controller found over USB")
+            Log.e(TAG, "No supported controller found over USB")
             return false
         }
+
+        // Steam Controller has a vendor-specific protocol and must keep its dedicated path.
+        // Xbox and DualSense use the kernel evdev nodes instead of Steam HID reports.
+        if (dev.vendorId != UsbConnectionManager.STEAM_VID) {
+            val productName = try { dev.productName } catch (_: Throwable) { null }
+            val filter = productName?.takeIf { it.isNotBlank() } ?: "ANY"
+            Log.i(TAG, "Starting USB gamepad evdev reader: name='$filter', VID=0x${dev.vendorId.toString(16)}, PID=0x${dev.productId.toString(16)}")
+            uinput.startEvdevReader(inputEventListener, filter)
+            return true
+        }
+
         if (!usbManager.connect(dev)) {
             Log.e(TAG, "Failed to connect USB device")
             return false
