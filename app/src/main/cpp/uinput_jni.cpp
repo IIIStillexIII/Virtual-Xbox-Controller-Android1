@@ -560,6 +560,7 @@ static std::thread g_evdev_thread;
 static std::string g_target_device_filter = "ANY";
 static int g_target_vendor = -1;
 static int g_target_product = -1;
+static bool g_target_bluetooth_only = false;
 
 JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void*) {
     g_jvm = vm;
@@ -930,6 +931,13 @@ static void evdev_reader_thread_func() {
             std::string uniq_str(dev_uniq);
             std::string phys_str(dev_phys);
 
+            struct input_id inputId{};
+            if (ioctl(fd, EVIOCGID, &inputId) < 0 ||
+                (g_target_bluetooth_only && inputId.bustype != BUS_BLUETOOTH)) {
+                close(fd);
+                continue;
+            }
+
             // Ignore only our known synthetic output nodes. Do not filter by the
             // broad "Steam Controller" substring: that also hides a real physical
             // Steam Controller, which is a valid source device for this bridge.
@@ -995,9 +1003,7 @@ static void evdev_reader_thread_func() {
             }
 
             if (g_target_vendor >= 0 && g_target_product >= 0) {
-                struct input_id inputId{};
-                if (ioctl(fd, EVIOCGID, &inputId) < 0 ||
-                    inputId.vendor != g_target_vendor ||
+                if (inputId.vendor != g_target_vendor ||
                     inputId.product != g_target_product) {
                     close(fd);
                     continue;
@@ -1023,7 +1029,7 @@ static void evdev_reader_thread_func() {
             dev.name = name_str;
             dev.phys = phys_str;
             dev.uniq = uniq_str;
-            ioctl(fd, EVIOCGID, &dev.id);
+            dev.id = inputId;
             dev.has_gamepad_button = has_gamepad_button;
             dev.has_hat_x = selected_hat_x >= 0;
             dev.has_hat_y = selected_hat_y >= 0;
@@ -1374,12 +1380,23 @@ Java_com_virtualcontroller_android_uinput_UInputNative_startEvdevReader(
     if (!g_listener_ref) return JNI_FALSE;
     g_target_vendor = -1;
     g_target_product = -1;
+    g_target_bluetooth_only = false;
     if (deviceFilter) {
         const char* str = env->GetStringUTFChars(deviceFilter, nullptr);
         g_target_device_filter = str ? str : "ANY";
         if (str) env->ReleaseStringUTFChars(deviceFilter, str);
     } else {
         g_target_device_filter = "ANY";
+    }
+
+    // Bluetooth callers constrain scans to BUS_BLUETOOTH so the generic
+    // "any controller" mode cannot accidentally grab a connected USB gamepad.
+    if (g_target_device_filter == "ANY_BT") {
+        g_target_bluetooth_only = true;
+        g_target_device_filter = "ANY";
+    } else if (g_target_device_filter.rfind("BTADDR:", 0) == 0) {
+        g_target_bluetooth_only = true;
+        g_target_device_filter = g_target_device_filter.substr(7);
     }
 
     // USB callers can identify a physical controller by its USB VID/PID. This is
