@@ -912,8 +912,8 @@ static void evdev_reader_thread_func() {
                         // the virtual controller until another physical event arrives.
                         open_fds[i].buttons = 0;
                         recompute_buttons();
-                        recompute_axes();
-                        state_changed = true;
+                    recompute_axes();
+                    state_changed = true;
                     }
                     continue;
                 }
@@ -1008,8 +1008,9 @@ static void evdev_reader_thread_func() {
                                 if (!dev.has_rx) {
                                     set_axis(dev, 2, scale_axis(ev.value, dev.abs_z.minimum, dev.abs_z.maximum, -32767, 32767));
                                 } else {
-                                    set_axis(dev, 4, scale_axis(ev.value, dev.abs_z.minimum, dev.abs_z.maximum, 0, 32767));
-                                    if (cur_lt > 16384) dev.buttons |= 0x08000000; else dev.buttons &= ~0x08000000;
+                                    const int32_t trigger = scale_axis(ev.value, dev.abs_z.minimum, dev.abs_z.maximum, 0, 32767);
+                                    set_axis(dev, 4, trigger);
+                                    if (trigger > 16384) dev.buttons |= 0x08000000; else dev.buttons &= ~0x08000000;
                                 }
                                 state_changed = true;
                                 break;
@@ -1018,19 +1019,22 @@ static void evdev_reader_thread_func() {
                                     int32_t s = scale_axis(ev.value, dev.abs_rz.minimum, dev.abs_rz.maximum, -32767, 32767);
                                     set_axis(dev, 3, -s);
                                 } else {
-                                    set_axis(dev, 5, scale_axis(ev.value, dev.abs_rz.minimum, dev.abs_rz.maximum, 0, 32767));
-                                    if (cur_rt > 16384) dev.buttons |= 0x00800000; else dev.buttons &= ~0x00800000;
+                                    const int32_t trigger = scale_axis(ev.value, dev.abs_rz.minimum, dev.abs_rz.maximum, 0, 32767);
+                                    set_axis(dev, 5, trigger);
+                                    if (trigger > 16384) dev.buttons |= 0x00800000; else dev.buttons &= ~0x00800000;
                                 }
                                 state_changed = true;
                                 break;
                             case ABS_BRAKE:
-                                set_axis(dev, 4, scale_axis(ev.value, dev.abs_brake.minimum, dev.abs_brake.maximum, 0, 32767));
-                                if (cur_lt > 16384) dev.buttons |= 0x08000000; else dev.buttons &= ~0x08000000;
+                                const int32_t trigger = scale_axis(ev.value, dev.abs_brake.minimum, dev.abs_brake.maximum, 0, 32767);
+                                set_axis(dev, 4, trigger);
+                                if (trigger > 16384) dev.buttons |= 0x08000000; else dev.buttons &= ~0x08000000;
                                 state_changed = true;
                                 break;
                             case ABS_GAS:
-                                set_axis(dev, 5, scale_axis(ev.value, dev.abs_gas.minimum, dev.abs_gas.maximum, 0, 32767));
-                                if (cur_rt > 16384) dev.buttons |= 0x00800000; else dev.buttons &= ~0x00800000;
+                                const int32_t trigger = scale_axis(ev.value, dev.abs_gas.minimum, dev.abs_gas.maximum, 0, 32767);
+                                set_axis(dev, 5, trigger);
+                                if (trigger > 16384) dev.buttons |= 0x00800000; else dev.buttons &= ~0x00800000;
                                 state_changed = true;
                                 break;
                             case ABS_HAT0X:
