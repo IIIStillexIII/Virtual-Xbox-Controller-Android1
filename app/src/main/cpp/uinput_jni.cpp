@@ -841,6 +841,12 @@ static void evdev_reader_thread_func() {
                         ioctl(open_fds[i].fd, EVIOCGRAB, 0);
                         close(open_fds[i].fd);
                         open_fds[i].fd = -1;
+                        // A removed source must not leave buttons or sticks held on
+                        // the virtual controller until another physical event arrives.
+                        cur_buttons = 0;
+                        cur_lx = cur_ly = cur_rx = cur_ry = 0;
+                        cur_lt = cur_rt = 0;
+                        state_changed = true;
                     }
                     continue;
                 }
@@ -852,6 +858,11 @@ static void evdev_reader_thread_func() {
                     ioctl(open_fds[i].fd, EVIOCGRAB, 0);
                     close(open_fds[i].fd);
                     open_fds[i].fd = -1;
+                    // Release the virtual state on EOF/error just as on poll HUP.
+                    cur_buttons = 0;
+                    cur_lx = cur_ly = cur_rx = cur_ry = 0;
+                    cur_lt = cur_rt = 0;
+                    state_changed = true;
                     continue;
                 }
 
