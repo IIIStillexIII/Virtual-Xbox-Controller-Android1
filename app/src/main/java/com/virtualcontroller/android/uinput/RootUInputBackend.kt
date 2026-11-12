@@ -40,6 +40,7 @@ class RootUInputBackend(private val context: Context) {
     private var inputSocket: LocalSocket? = null
     @Volatile private var inputListener: ((ByteArray) -> Unit)? = null
     @Volatile private var inputReaderRunning = false
+    @Volatile private var inputReaderFailed = false
 
     @Synchronized
     fun start(): Boolean {
@@ -103,6 +104,7 @@ class RootUInputBackend(private val context: Context) {
                 return false
             }
             inputSocket = inputClient
+            inputReaderFailed = false
             inputReaderRunning = true
             Thread({
                 try {
@@ -114,7 +116,12 @@ class RootUInputBackend(private val context: Context) {
                         inputListener?.invoke(report)
                     }
                 } catch (t: Throwable) {
-                    if (inputReaderRunning) Log.w(TAG, "Root evdev stream ended: " + t.message)
+                    if (inputReaderRunning) Log.w(TAG, "Root input stream ended: " + t.message)
+                } finally {
+                    if (inputReaderRunning) {
+                        inputReaderFailed = true
+                        Log.e(TAG, "Root input socket closed unexpectedly")
+                    }
                 }
             }, "root-evdev-input").apply { isDaemon = true; start() }
             true
@@ -126,7 +133,8 @@ class RootUInputBackend(private val context: Context) {
     }
 
     val isReady: Boolean
-        @Synchronized get() = socket?.isConnected == true && process?.isAlive == true
+        @Synchronized get() = socket?.isConnected == true && process?.isAlive == true &&
+            inputSocket?.isConnected == true && !inputReaderFailed
 
     @Synchronized
     fun canOpen(): Boolean = requestBoolean(OP_CAN_OPEN)
