@@ -318,13 +318,25 @@ Java_com_virtualcontroller_android_uinput_UInputNative_createDevice(JNIEnv*, jcl
     if (set_bit_or_log(fd, UI_SET_FFBIT, FF_PERIODIC, "FF_PERIODIC") < 0) goto fail;
 
     {
-        const int btns[] = {
-            BTN_A, BTN_B, BTN_X, BTN_Y,
+        // Advertise the exact face-button keycodes that sendFrame() will emit.
+        // Android's DualSense key layout expects Square=BTN_WEST and
+        // Triangle=BTN_NORTH; declaring BTN_X/BTN_Y instead would leave those
+        // emitted events outside the device's advertised capabilities.
+        const int face_btns[] = {
+            BTN_A, BTN_B,
+            prof->id == 3 ? BTN_WEST : BTN_X,
+            prof->id == 3 ? BTN_NORTH : BTN_Y
+        };
+        for (int b : face_btns) {
+            if (set_bit_or_log(fd, UI_SET_KEYBIT, b, "face KEY") < 0) goto fail;
+        }
+
+        const int other_btns[] = {
             BTN_TL, BTN_TR,
             BTN_SELECT, BTN_START, BTN_MODE,
             BTN_THUMBL, BTN_THUMBR
         };
-        for (int b : btns) {
+        for (int b : other_btns) {
             if (set_bit_or_log(fd, UI_SET_KEYBIT, b, "KEY") < 0) goto fail;
         }
     }
