@@ -554,6 +554,8 @@ Java_com_virtualcontroller_android_uinput_UInputNative_destroy(JNIEnv*, jclass) 
 static JavaVM* g_jvm = nullptr;
 static jobject g_listener_ref = nullptr;
 static std::atomic<bool> g_evdev_running{false};
+// 0 = starting/stopped, 1 = JNI callback thread ready, -1 = startup failed.
+static std::atomic<int> g_evdev_start_state{0};
 static std::thread g_evdev_thread;
 static std::string g_target_device_filter = "ANY";
 static int g_target_vendor = -1;
@@ -569,6 +571,7 @@ static void stop_evdev_reader_internal() {
     if (g_evdev_thread.joinable()) {
         g_evdev_thread.join();
     }
+    g_evdev_start_state.store(0);
     if (g_listener_ref && g_jvm) {
         JNIEnv* env = nullptr;
         if (g_jvm->GetEnv((void**)&env, JNI_VERSION_1_6) == JNI_OK && env) {
@@ -617,21 +620,27 @@ static void evdev_reader_thread_func() {
     JNIEnv* env = nullptr;
     if (!g_jvm || g_jvm->AttachCurrentThread(&env, nullptr) != JNI_OK || !env) {
         LOGE("evdev_reader: AttachCurrentThread failed");
+        g_evdev_start_state.store(-1);
         return;
     }
 
     jclass listenerClass = env->GetObjectClass(g_listener_ref);
     if (!listenerClass) {
         LOGE("evdev_reader: GetObjectClass failed");
+        g_evdev_start_state.store(-1);
         g_jvm->DetachCurrentThread();
         return;
     }
     jmethodID onFrameMethod = env->GetMethodID(listenerClass, "onInputFrame", "([B)V");
     if (!onFrameMethod) {
         LOGE("evdev_reader: GetMethodID onInputFrame failed");
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        g_evdev_start_state.store(-1);
         g_jvm->DetachCurrentThread();
         return;
     }
+    // Signal only after the native worker is attached and can invoke the callback.
+    g_evdev_start_state.store(1);
 
     struct EvdevFd {
         int fd;
@@ -1355,13 +1364,14 @@ static void evdev_reader_thread_func() {
     g_jvm->DetachCurrentThread();
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_virtualcontroller_android_uinput_UInputNative_startEvdevReader(
         JNIEnv* env, jclass, jobject listener, jstring deviceFilter) {
     stop_evdev_reader_internal();
 
-    if (!listener) return;
+    if (!listener) return JNI_FALSE;
     g_listener_ref = env->NewGlobalRef(listener);
+    if (!g_listener_ref) return JNI_FALSE;
     g_target_vendor = -1;
     g_target_product = -1;
     if (deviceFilter) {
@@ -1384,9 +1394,30 @@ Java_com_virtualcontroller_android_uinput_UInputNative_startEvdevReader(
         }
     }
 
+    g_evdev_start_state.store(0);
     g_evdev_running.store(true);
-    g_evdev_thread = std::thread(evdev_reader_thread_func);
-    LOGI("startEvdevReader started (filter=\"%s\")", g_target_device_filter.c_str());
+    try {
+        g_evdev_thread = std::thread(evdev_reader_thread_func);
+    } catch (...) {
+        LOGE("startEvdevReader: failed to create worker thread");
+        stop_evdev_reader_internal();
+        return JNI_FALSE;
+    }
+
+    // Do not report success until the worker has attached to the JVM and resolved
+    // the listener callback. Otherwise the service could claim to be active while
+    // no input thread is capable of forwarding controller events.
+    for (int attempt = 0; attempt < 100 && g_evdev_start_state.load() == 0; ++attempt) {
+        usleep(5000);
+    }
+    if (g_evdev_start_state.load() != 1) {
+        LOGE("startEvdevReader: worker initialization failed");
+        stop_evdev_reader_internal();
+        return JNI_FALSE;
+    }
+
+    LOGI("startEvdevReader ready (filter=\"%s\")", g_target_device_filter.c_str());
+    return JNI_TRUE;
 }
 
 extern "C" JNIEXPORT void JNICALL
