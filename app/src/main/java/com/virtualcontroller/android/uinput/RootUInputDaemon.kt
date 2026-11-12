@@ -30,6 +30,8 @@ class RootUInputDaemon private constructor() {
         private const val OP_DESTROY = 7
         private const val OP_START_EVDEV = 8
         private const val OP_STOP_EVDEV = 9
+        private const val OP_RUN_SHELL = 10
+        private const val OP_RUN_SHELL_OUTPUT = 11
         @Volatile private var inputOutput: DataOutputStream? = null
 
         @JvmStatic
@@ -89,7 +91,7 @@ class RootUInputDaemon private constructor() {
             }
         }
 
-        private fun handleClient(socket: LocalSocket): Boolean {
+        private fun readCommand(input: DataInputStream): List<String> {\n            val count = input.readInt()\n            require(count in 1..32) { "Invalid shell argument count: $count" }\n            return List(count) { input.readUTF() }\n        }\n\n        private fun handleClient(socket: LocalSocket): Boolean {
             socket.use { client ->
                 val input = DataInputStream(client.inputStream)
                 val output = DataOutputStream(client.outputStream)
@@ -142,6 +144,25 @@ class RootUInputDaemon private constructor() {
                             OP_STOP_EVDEV -> {
                                 UInputNative.stopEvdevReader()
                                 output.writeBoolean(true)
+                                output.flush()
+                            }
+                            OP_RUN_SHELL -> {
+                                val command = readCommand(input)
+                                val exitCode = ProcessBuilder(command).redirectErrorStream(true).start().let { process ->
+                                    process.inputStream.bufferedReader().use { it.readText() }
+                                    process.waitFor()
+                                }
+                                output.writeInt(exitCode)
+                                output.flush()
+                            }
+                            OP_RUN_SHELL_OUTPUT -> {
+                                val command = readCommand(input)
+                                val result = ProcessBuilder(command).redirectErrorStream(true).start().let { process ->
+                                    val text = process.inputStream.bufferedReader().use { it.readText() }
+                                    process.waitFor()
+                                    text.trim()
+                                }
+                                output.writeUTF(result.take(60000))
                                 output.flush()
                             }
                             OP_DESTROY -> {
