@@ -633,10 +633,15 @@ static void evdev_reader_thread_func() {
         bool has_brake{false};
         bool has_gas{false};
         uint32_t buttons{0};
+        int32_t axis_values[6]{};
+        uint64_t axis_order[6]{};
+        bool axis_valid[6]{};
+        bool dropping{false};
     };
 
     std::vector<EvdevFd> open_fds;
 
+    uint64_t axis_sequence = 1;
     uint32_t cur_buttons = 0;
     int16_t cur_lx = 0, cur_ly = 0, cur_rx = 0, cur_ry = 0;
     uint16_t cur_lt = 0, cur_rt = 0;
@@ -680,6 +685,34 @@ static void evdev_reader_thread_func() {
             if (dev.fd >= 0) combined |= dev.buttons;
         }
         cur_buttons = combined;
+    };
+
+    // Keep each event interface's axes separate. The latest active source
+    // update wins independently for each virtual axis.
+    auto recompute_axes = [&]() {
+        int32_t values[6] = {};
+        uint64_t orders[6] = {};
+        for (const auto& dev : open_fds) {
+            if (dev.fd < 0) continue;
+            for (int axis = 0; axis < 6; ++axis) {
+                if (dev.axis_valid[axis] && dev.axis_order[axis] >= orders[axis]) {
+                    orders[axis] = dev.axis_order[axis];
+                    values[axis] = dev.axis_values[axis];
+                }
+            }
+        }
+        cur_lx = (int16_t)values[0];
+        cur_ly = (int16_t)values[1];
+        cur_rx = (int16_t)values[2];
+        cur_ry = (int16_t)values[3];
+        cur_lt = (uint16_t)values[4];
+        cur_rt = (uint16_t)values[5];
+    };
+
+    auto set_axis = [&](EvdevFd& dev, int axis, int32_t value) {
+        dev.axis_values[axis] = value;
+        dev.axis_order[axis] = axis_sequence++;
+        dev.axis_valid[axis] = true;
     };
 
     auto rescan_devices = [&]() {
@@ -879,20 +912,7 @@ static void evdev_reader_thread_func() {
                         // the virtual controller until another physical event arrives.
                         open_fds[i].buttons = 0;
                         recompute_buttons();
-                        if (open_fds[i].has_x) cur_lx = 0;
-                        if (open_fds[i].has_y) cur_ly = 0;
-                        if (open_fds[i].has_rx) cur_rx = 0;
-                        if (open_fds[i].has_ry) cur_ry = 0;
-                        if (open_fds[i].has_z) {
-                        if (open_fds[i].has_rx) cur_lt = 0;
-                        else cur_rx = 0;
-                                            }
-                        if (open_fds[i].has_rz) {
-                        if (open_fds[i].has_ry) cur_rt = 0;
-                        else cur_ry = 0;
-                                            }
-                        if (open_fds[i].has_brake) cur_lt = 0;
-                        if (open_fds[i].has_gas) cur_rt = 0;
+                        recompute_axes();
                         state_changed = true;
                     }
                     continue;
@@ -908,21 +928,8 @@ static void evdev_reader_thread_func() {
                     // Release the virtual state on EOF/error just as on poll HUP.
                     open_fds[i].buttons = 0;
                     recompute_buttons();
-                    if (open_fds[i].has_x) cur_lx = 0;
-                    if (open_fds[i].has_y) cur_ly = 0;
-                    if (open_fds[i].has_rx) cur_rx = 0;
-                    if (open_fds[i].has_ry) cur_ry = 0;
-                    if (open_fds[i].has_z) {
-                    if (open_fds[i].has_rx) cur_lt = 0;
-                    else cur_rx = 0;
-                                        }
-                    if (open_fds[i].has_rz) {
-                    if (open_fds[i].has_ry) cur_rt = 0;
-                    else cur_ry = 0;
-                                        }
-                    if (open_fds[i].has_brake) cur_lt = 0;
-                    if (open_fds[i].has_gas) cur_rt = 0;
-                    state_changed = true;
+                        recompute_axes();
+                        state_changed = true;
                     continue;
                 }
 
@@ -931,6 +938,21 @@ static void evdev_reader_thread_func() {
 
                 for (size_t k = 0; k < count; k++) {
                     const auto& ev = evs[k];
+
+                    if (dev.dropping) {
+                        if (ev.type == EV_SYN && ev.code == SYN_REPORT) dev.dropping = false;
+                        continue;
+                    }
+                    if (ev.type == EV_SYN && ev.code == SYN_DROPPED) {
+                        // Discard this interface's stale state until the next SYN_REPORT.
+                        dev.dropping = true;
+                        dev.buttons = 0;
+                        for (int axis = 0; axis < 6; ++axis) dev.axis_valid[axis] = false;
+                        recompute_buttons();
+                        recompute_axes();
+                        state_changed = true;
+                        continue;
+                    }
 
                     if (ev.type == EV_KEY) {
                         uint32_t mask = 0;
@@ -963,30 +985,30 @@ static void evdev_reader_thread_func() {
                     } else if (ev.type == EV_ABS) {
                         switch (ev.code) {
                             case ABS_X:
-                                cur_lx = (int16_t)scale_axis(ev.value, dev.abs_x.minimum, dev.abs_x.maximum, -32767, 32767);
+                                set_axis(dev, 0, scale_axis(ev.value, dev.abs_x.minimum, dev.abs_x.maximum, -32767, 32767));
                                 state_changed = true;
                                 break;
                             case ABS_Y: {
                                 int32_t s = scale_axis(ev.value, dev.abs_y.minimum, dev.abs_y.maximum, -32767, 32767);
-                                cur_ly = (int16_t)(-s);
+                                set_axis(dev, 1, -s);
                                 state_changed = true;
                                 break;
                             }
                             case ABS_RX:
-                                cur_rx = (int16_t)scale_axis(ev.value, dev.abs_rx.minimum, dev.abs_rx.maximum, -32767, 32767);
+                                set_axis(dev, 2, scale_axis(ev.value, dev.abs_rx.minimum, dev.abs_rx.maximum, -32767, 32767));
                                 state_changed = true;
                                 break;
                             case ABS_RY: {
                                 int32_t s = scale_axis(ev.value, dev.abs_ry.minimum, dev.abs_ry.maximum, -32767, 32767);
-                                cur_ry = (int16_t)(-s);
+                                set_axis(dev, 3, -s);
                                 state_changed = true;
                                 break;
                             }
                             case ABS_Z:
                                 if (!dev.has_rx) {
-                                    cur_rx = (int16_t)scale_axis(ev.value, dev.abs_z.minimum, dev.abs_z.maximum, -32767, 32767);
+                                    set_axis(dev, 2, scale_axis(ev.value, dev.abs_z.minimum, dev.abs_z.maximum, -32767, 32767));
                                 } else {
-                                    cur_lt = (uint16_t)scale_axis(ev.value, dev.abs_z.minimum, dev.abs_z.maximum, 0, 32767);
+                                    set_axis(dev, 4, scale_axis(ev.value, dev.abs_z.minimum, dev.abs_z.maximum, 0, 32767));
                                     if (cur_lt > 16384) dev.buttons |= 0x08000000; else dev.buttons &= ~0x08000000;
                                 }
                                 state_changed = true;
@@ -994,20 +1016,20 @@ static void evdev_reader_thread_func() {
                             case ABS_RZ:
                                 if (!dev.has_ry) {
                                     int32_t s = scale_axis(ev.value, dev.abs_rz.minimum, dev.abs_rz.maximum, -32767, 32767);
-                                    cur_ry = (int16_t)(-s);
+                                    set_axis(dev, 3, -s);
                                 } else {
-                                    cur_rt = (uint16_t)scale_axis(ev.value, dev.abs_rz.minimum, dev.abs_rz.maximum, 0, 32767);
+                                    set_axis(dev, 5, scale_axis(ev.value, dev.abs_rz.minimum, dev.abs_rz.maximum, 0, 32767));
                                     if (cur_rt > 16384) dev.buttons |= 0x00800000; else dev.buttons &= ~0x00800000;
                                 }
                                 state_changed = true;
                                 break;
                             case ABS_BRAKE:
-                                cur_lt = (uint16_t)scale_axis(ev.value, dev.abs_brake.minimum, dev.abs_brake.maximum, 0, 32767);
+                                set_axis(dev, 4, scale_axis(ev.value, dev.abs_brake.minimum, dev.abs_brake.maximum, 0, 32767));
                                 if (cur_lt > 16384) dev.buttons |= 0x08000000; else dev.buttons &= ~0x08000000;
                                 state_changed = true;
                                 break;
                             case ABS_GAS:
-                                cur_rt = (uint16_t)scale_axis(ev.value, dev.abs_gas.minimum, dev.abs_gas.maximum, 0, 32767);
+                                set_axis(dev, 5, scale_axis(ev.value, dev.abs_gas.minimum, dev.abs_gas.maximum, 0, 32767));
                                 if (cur_rt > 16384) dev.buttons |= 0x00800000; else dev.buttons &= ~0x00800000;
                                 state_changed = true;
                                 break;
@@ -1040,6 +1062,7 @@ static void evdev_reader_thread_func() {
                     } // else if EV_ABS
                 } // for k
                 recompute_buttons();
+                recompute_axes();
             } // for i
         } // if poll_res > 0
 
