@@ -39,6 +39,7 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
     @Volatile private var rootDeviceReady = false
     @Volatile private var rootEvdevActive = false
     private var bound = false
+    private var shizukuBound = false
     @Volatile private var profile: GamepadProfile = initialProfile
 
     /** Set by ControllerService to receive rumble commands from games. (strong, weak) ∈ [0, 65535]. */
@@ -139,7 +140,10 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
             rootBackend.close()
             Log.i(TAG, "Root uinput unavailable; Shizuku will create the virtual device")
         }
-        Shizuku.bindUserService(args, connection)
+        if (!rootDeviceReady) {
+            Shizuku.bindUserService(args, connection)
+            shizukuBound = true
+        }
         bound = true
         startRumbleThread()
     }
@@ -153,7 +157,10 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
         }
         try { rootBackend.close() } catch (_: Throwable) {}
         rootDeviceReady = false
-        Shizuku.unbindUserService(args, connection, true)
+        if (shizukuBound) {
+            Shizuku.unbindUserService(args, connection, true)
+            shizukuBound = false
+        }
         bound = false
         service = null
         deviceReady = false
@@ -227,7 +234,7 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
         rumbleThread = null
     }
 
-    val isReady get() = service != null && deviceReady
+    val isReady get() = deviceReady && (rootDeviceReady || service != null)
 
     /**
      * Swap the emulated controller profile without unbinding the user service.
@@ -255,7 +262,8 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
 
     // Push one HID frame from the SC2026 parser, translated to Xbox 360 layout.
     fun pushFrame(state: SteamControllerState) {
-        val svc = service ?: return
+        val svc = service
+        if (!rootDeviceReady && svc == null) return
 
         // Refresh cached calibrations + button mapping from prefs at most every 250ms
         val now = android.os.SystemClock.uptimeMillis()
@@ -352,7 +360,7 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
      * keeping the mouse fd idle is critical so Android IME focus isn't stolen by
      * a phantom cursor (same rationale as in Desktop mode).
      */
-    private fun pushSidecarFrame(svc: IUInputService, state: SteamControllerState, mappedKeys: Int) {
+    private fun pushSidecarFrame(svc: IUInputService?, state: SteamControllerState, mappedKeys: Int) {
         val (relX, relY, scrollTicks) = if (cachedTrackpadAsMouse) {
             val (rx, ry) = computeRightPadDelta(state)
             Triple(rx, ry, computeLeftPadScroll(state))
@@ -373,7 +381,7 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
         if (relX == 0 && relY == 0 && scrollTicks == 0 && keys == 0) return
         try {
             if (rootDeviceReady) rootBackend.sendMouseFrame(relX, relY, scrollTicks, keys)
-            else svc.sendMouseFrame(relX, relY, scrollTicks, keys)
+            else svc?.sendMouseFrame(relX, relY, scrollTicks, keys)
         } catch (t: Throwable) {
             Log.e(TAG, "sendMouseFrame (sidecar) IPC failed: ${t.message}")
         }
@@ -428,7 +436,7 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
      * face/system buttons → mapped keys, DPAD → arrow keys, left pad click → right mouse.
      * Special actions (e.g. SCREENSHOT) still fire via the gamepad mapping.
      */
-    private fun pushMouseFrame(svc: IUInputService, state: SteamControllerState) {
+    private fun pushMouseFrame(svc: IUInputService?, state: SteamControllerState) {
         // Right trackpad → cursor delta; left trackpad vertical → scroll wheel.
         // Same helpers as the gamepad sidecar mode so the gesture is identical.
         val (relX, relY)   = computeRightPadDelta(state)
