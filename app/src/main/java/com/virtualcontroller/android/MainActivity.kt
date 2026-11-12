@@ -53,7 +53,7 @@ class MainActivity : ComponentActivity() {
     private var serviceRunning by mutableStateOf(false)
     private var shizukuReady by mutableStateOf(false)
     private var transport by mutableStateOf(Transport.USB)
-    private var profile by mutableStateOf(GamepadProfile.XBOX_360)
+    private var profile by mutableStateOf(GamepadProfile.XBOX)
     private var pairedBtDevices by mutableStateOf<List<BluetoothDevice>>(emptyList())
     private var btAddress by mutableStateOf<String?>(null)
     private var themeMode by mutableStateOf(ThemeMode.STEAM)
