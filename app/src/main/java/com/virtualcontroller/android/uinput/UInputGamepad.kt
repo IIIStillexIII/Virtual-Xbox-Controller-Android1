@@ -88,7 +88,7 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
         .debuggable(false)
         // Bumped with every IUInputService change: Shizuku reuses a running service of the
         // same version, and an old one would not know the newer methods.
-        .version(2)
+        .version(3)
 
     @Volatile private var deviceReady = false
 
@@ -526,8 +526,8 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
         }
     }
 
-    fun startEvdevReader(listener: com.virtualcontroller.android.ipc.IInputEventListener, deviceFilter: String?) {
-        try {
+    fun startEvdevReader(listener: com.virtualcontroller.android.ipc.IInputEventListener, deviceFilter: String?): Boolean {
+        return try {
             if (rootDeviceReady) {
                 val started = rootBackend.startEvdevReader(deviceFilter) { report ->
                     try { listener.onInputFrame(report) } catch (t: Throwable) {
@@ -535,13 +535,19 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
                     }
                 }
                 rootEvdevActive = started
-                if (started) return
-                Log.w(TAG, "Root evdev reader unavailable; trying Shizuku reader")
+                if (!started) Log.e(TAG, "Root evdev reader failed to initialize")
+                started
+            } else {
+                rootEvdevActive = false
+                val svc = service ?: return false
+                val started = svc.startEvdevReader(listener, deviceFilter)
+                if (!started) Log.e(TAG, "Shizuku evdev reader failed to initialize")
+                started
             }
-            rootEvdevActive = false
-            service?.startEvdevReader(listener, deviceFilter)
         } catch (t: Throwable) {
             Log.e(TAG, "startEvdevReader failed: " + t.message)
+            rootEvdevActive = false
+            false
         }
     }
 
