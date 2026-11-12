@@ -8,6 +8,7 @@ import android.content.ServiceConnection
 import android.os.IBinder
 import android.util.Log
 import com.virtualcontroller.android.Prefs
+import com.virtualcontroller.android.InjectionBackend
 import com.virtualcontroller.android.input.DEFAULT_MOUSE_MAPPING
 import com.virtualcontroller.android.input.MOUSE_LEFT_PAD_CLICK_BIT
 import com.virtualcontroller.android.input.MOUSE_MODE_FIXED_DPAD
@@ -126,26 +127,37 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
         }
     }
 
-    fun bind() {
+    fun bind(backend: InjectionBackend = Prefs.getInjectionBackend(context)) {
         if (bound) return
-        rootDeviceReady = try {
-            rootBackend.start() && rootBackend.canOpen() && rootBackend.createDevice(profile.id)
-        } catch (t: Throwable) {
-            Log.w(TAG, "Root uinput unavailable; using Shizuku fallback: ${t.message}")
-            false
+
+        when (backend) {
+            InjectionBackend.ROOT -> {
+                rootDeviceReady = try {
+                    rootBackend.start() && rootBackend.canOpen() && rootBackend.createDevice(profile.id)
+                } catch (t: Throwable) {
+                    Log.e(TAG, "Selected Root backend failed: ${t.message}")
+                    false
+                }
+                if (rootDeviceReady) {
+                    deviceReady = true
+                    Thread({ applyShowImeOverride() }, "root-ime-override").apply { isDaemon = true; start() }
+                    Log.i(TAG, "Root uinput is the selected and active virtual-device backend")
+                } else {
+                    rootBackend.close()
+                    deviceReady = false
+                    Log.e(TAG, "Selected Root backend is unavailable; Shizuku will not be started automatically")
+                }
+            }
+            InjectionBackend.SHIZUKU -> {
+                rootBackend.close()
+                rootDeviceReady = false
+                deviceReady = false
+                Log.i(TAG, "Starting the explicitly selected Shizuku backend")
+                Shizuku.bindUserService(args, connection)
+                shizukuBound = true
+            }
         }
-        if (rootDeviceReady) {
-            deviceReady = true
-            Thread({ applyShowImeOverride() }, "root-ime-override").apply { isDaemon = true; start() }
-            Log.i(TAG, "Root uinput is the active virtual-device backend")
-        } else {
-            rootBackend.close()
-            Log.i(TAG, "Root uinput unavailable; Shizuku will create the virtual device")
-        }
-        if (!rootDeviceReady) {
-            Shizuku.bindUserService(args, connection)
-            shizukuBound = true
-        }
+
         bound = true
         startRumbleThread()
     }
