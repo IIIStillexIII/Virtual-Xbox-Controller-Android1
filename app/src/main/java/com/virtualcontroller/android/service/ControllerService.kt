@@ -449,7 +449,7 @@ class ControllerService : Service() {
 
         if (address == null || address == "ANY") {
             Log.i(TAG, "Starting Evdev reader for Any Bluetooth Controller")
-            return uinput.startEvdevReader(inputEventListener, "ANY")
+            return uinput.startEvdevReader(inputEventListener, "ANY_BT")
         }
 
         val mgr = getSystemService(BluetoothManager::class.java)
@@ -482,7 +482,7 @@ class ControllerService : Service() {
             }
         } else {
             Log.i(TAG, "Starting Evdev reader for Bluetooth Controller (address=$address)")
-            return uinput.startEvdevReader(inputEventListener, address)
+            return uinput.startEvdevReader(inputEventListener, "BTADDR:$address")
         }
 
         return true
