@@ -17,6 +17,6 @@ enum class GamepadProfile(
 
     companion object {
         fun fromId(id: Int): GamepadProfile =
-            values().firstOrNull { it.id == id }?.takeUnless { it.isMouseMode } ?: XBOX
+            values().firstOrNull { it.id == id } ?: XBOX
     }
 }
