@@ -96,13 +96,17 @@ fun SettingsScreen(
             },
         ))
         Text(
-            when (injectionBackend) {
-                InjectionBackend.ROOT -> "Root access and /dev/uinput are checked when the controller starts."
-                InjectionBackend.SHIZUKU -> if (shizukuReady) {
+            when {
+                serviceRunning && injectionBackend == InjectionBackend.ROOT ->
+                    "Active backend: Root."
+                serviceRunning && injectionBackend == InjectionBackend.SHIZUKU ->
+                    "Active backend: Shizuku. If uinput is unavailable, the legacy injection fallback is reported in the log."
+                injectionBackend == InjectionBackend.ROOT ->
+                    "Root access and /dev/uinput are checked when the controller starts."
+                shizukuReady ->
                     "Shizuku is running and this app is authorized."
-                } else {
+                else ->
                     "Start Shizuku and grant this app permission before starting the controller."
-                }
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
