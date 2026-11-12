@@ -50,7 +50,7 @@ class RootUInputBackend(private val context: Context) {
             val app = context.applicationInfo
             val command = "CLASSPATH=${shellQuote(app.sourceDir)} " +
                 "LD_LIBRARY_PATH=${shellQuote(app.nativeLibraryDir)} " +
-                "app_process /system/bin com.virtualcontroller.android.uinput.RootUInputDaemon"
+                "app_process /system/bin com.virtualcontroller.android.uinput.RootUInputDaemon ${app.uid}"
             process = ProcessBuilder("su", "-c", command)
                 .redirectErrorStream(true)
                 .start()
