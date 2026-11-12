@@ -26,6 +26,8 @@ class RootUInputBackend(private val context: Context) {
         private const val OP_DESTROY = 7
         private const val OP_START_EVDEV = 8
         private const val OP_STOP_EVDEV = 9
+        private const val OP_RUN_SHELL = 10
+        private const val OP_RUN_SHELL_OUTPUT = 11
 
         private fun shellQuote(value: String): String =
             "'" + value.replace("'", "'\\''") + "'"
@@ -221,6 +223,40 @@ class RootUInputBackend(private val context: Context) {
             inputListener = null
         }
     }
+    @Synchronized
+    fun runShellCommand(command: Array<String>): Int {
+        return try {
+            val out = output ?: return -1
+            val inp = input ?: return -1
+            require(command.isNotEmpty() && command.size <= 32)
+            out.writeInt(OP_RUN_SHELL)
+            out.writeInt(command.size)
+            command.forEach { out.writeUTF(it) }
+            out.flush()
+            inp.readInt()
+        } catch (t: Throwable) {
+            Log.w(TAG, "runShellCommand failed: ${t.message}")
+            -1
+        }
+    }
+
+    @Synchronized
+    fun runShellCommandForOutput(command: Array<String>): String? {
+        return try {
+            val out = output ?: return null
+            val inp = input ?: return null
+            require(command.isNotEmpty() && command.size <= 32)
+            out.writeInt(OP_RUN_SHELL_OUTPUT)
+            out.writeInt(command.size)
+            command.forEach { out.writeUTF(it) }
+            out.flush()
+            inp.readUTF()
+        } catch (t: Throwable) {
+            Log.w(TAG, "runShellCommandForOutput failed: ${t.message}")
+            null
+        }
+    }
+
     @Synchronized
     fun close() {
         try {
