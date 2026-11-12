@@ -37,6 +37,7 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
     // Root owns virtual output when available; Shizuku remains the evdev reader/fallback.
     private val rootBackend = RootUInputBackend(context)
     @Volatile private var rootDeviceReady = false
+    @Volatile private var rootEvdevActive = false
     private var bound = false
     @Volatile private var profile: GamepadProfile = initialProfile
 
@@ -479,9 +480,11 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
                         Log.w(TAG, "Root evdev callback failed: " + t.message)
                     }
                 }
+                rootEvdevActive = started
                 if (started) return
                 Log.w(TAG, "Root evdev reader unavailable; trying Shizuku reader")
             }
+            rootEvdevActive = false
             service?.startEvdevReader(listener, deviceFilter)
         } catch (t: Throwable) {
             Log.e(TAG, "startEvdevReader failed: " + t.message)
@@ -490,8 +493,9 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
 
     fun stopEvdevReader() {
         try {
-            if (rootDeviceReady) rootBackend.stopEvdevReader()
+            if (rootEvdevActive) rootBackend.stopEvdevReader()
             else service?.stopEvdevReader()
+            rootEvdevActive = false
         } catch (t: Throwable) {
             Log.e(TAG, "stopEvdevReader failed: " + t.message)
         }
