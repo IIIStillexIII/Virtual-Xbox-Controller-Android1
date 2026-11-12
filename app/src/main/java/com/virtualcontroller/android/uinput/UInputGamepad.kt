@@ -215,13 +215,17 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
     private fun restoreShowImeOverride(svc: IUInputService? = null) {
         try {
             val saved = Prefs.getSavedShowImeHardKeyboard(context) ?: return
-            if (saved == SHOW_IME_UNSET_SENTINEL) {
+            val exitCode = if (saved == SHOW_IME_UNSET_SENTINEL) {
                 runShellCommand(arrayOf("settings", "delete", "secure", "show_ime_with_hard_keyboard"))
             } else {
                 runShellCommand(arrayOf("settings", "put", "secure", "show_ime_with_hard_keyboard", saved))
             }
-            Prefs.clearSavedShowImeHardKeyboard(context)
-            Log.i(TAG, "show_ime_with_hard_keyboard restored to '$saved'")
+            if (exitCode == 0) {
+                Prefs.clearSavedShowImeHardKeyboard(context)
+                Log.i(TAG, "show_ime_with_hard_keyboard restored to '$saved'")
+            } else {
+                Log.w(TAG, "Could not restore show_ime_with_hard_keyboard; saved value retained")
+            }
         } catch (t: Throwable) {
             Log.w(TAG, "restoreShowImeOverride failed: ${t.message}")
         }
@@ -238,6 +242,12 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
         rumbleThread = Thread({
             while (rumbleThreadRunning) {
                 try {
+                    if (rootDeviceReady && !rootBackend.isReady) {
+                        rootDeviceReady = false
+                        deviceReady = false
+                        Log.e(TAG, "Root daemon disconnected; virtual controller is no longer available")
+                        onBackendFailure?.invoke()
+                    }
                     val svc = service
                     if (deviceReady) {
                         val rumble = if (rootDeviceReady) rootBackend.pollForceFeedback() else svc?.pollForceFeedback()
