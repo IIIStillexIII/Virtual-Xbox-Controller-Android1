@@ -108,6 +108,7 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
                         }
                     } else {
                         deviceReady = true
+                        applyShowImeOverride(svc)
                         Log.i(TAG, "Root uinput output active; Shizuku retained for evdev input")
                     }
                 } catch (t: Throwable) {
@@ -145,8 +146,8 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
     fun unbind() {
         if (!bound) return
         stopRumbleThread()
+        try { service?.let { restoreShowImeOverride(it) } } catch (_: Throwable) {}
         if (!rootDeviceReady) {
-            try { service?.let { restoreShowImeOverride(it) } } catch (_: Throwable) {}
             try { service?.destroy() } catch (_: Throwable) {}
         }
         try { rootBackend.close() } catch (_: Throwable) {}
