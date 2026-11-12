@@ -561,11 +561,19 @@ class ControllerService : Service() {
         // the most likely cause of the "I can't change profile until I reboot" bug.
         scope.launch {
             try {
-                if (mode == InjectionMode.UINPUT) {
-                    val ok = uinput.switchProfile(next)
-                    if (!ok) Log.w(TAG, "switchProfile failed; the gamepad may need a service restart")
+                var selected = next
+                if (mode == InjectionMode.UINPUT && !uinput.switchProfile(next)) {
+                    Log.w(TAG, "switchProfile to ${next.displayName} failed; attempting to restore ${current.displayName}")
+                    // Do not leave settings/UI claiming that a profile is active when
+                    // the virtual device could not be recreated. Persist the previous
+                    // choice so the next service start also uses the known selection.
+                    Prefs.setProfile(this@ControllerService, current)
+                    selected = current
+                    if (!uinput.switchProfile(current)) {
+                        Log.e(TAG, "Could not restore the previous virtual gamepad profile")
+                    }
                 }
-                _profileFlow.value = next.id
+                _profileFlow.value = selected.id
                 refreshNotification()
             } finally {
                 profileSwitchInFlight = false
