@@ -34,11 +34,9 @@ struct gamepad_profile {
 };
 
 static const gamepad_profile PROFILES[] = {
-    { 0, 0x045E, 0x028E, "Microsoft X-Box 360 pad",                                           false }, // XBOX_360
-    { 1, 0x045E, 0x02EA, "Microsoft Xbox One Controller",                                     false }, // XBOX_ONE
-    { 2, 0x054C, 0x05C4, "Sony Interactive Entertainment Wireless Controller",                false }, // DS4
-    { 3, 0x054C, 0x0CE6, "Sony Interactive Entertainment DualSense Wireless Controller",      false }, // DualSense
-    { 4, 0x046D, 0xC077, "Steam Controller Desktop",                                          true  }, // MOUSE
+    { 0, 0x045E, 0x0B12, "Xbox Wireless Controller",                                          false }, // Xbox Series X|S profile
+    { 3, 0x054C, 0x0CE6, "dualsense",                                                          false }, // PS5 DualSense profile
+    { 4, 0x046D, 0xC077, "Steam Controller Desktop",                                          true  }, // Internal legacy mouse mode (not exposed in UI)
 };
 
 // Keyboard keys exposed in mouse mode. Order MUST match MouseKeyBit in MouseTarget.kt.
@@ -56,7 +54,7 @@ static constexpr int MOUSE_KEY_COUNT = sizeof(MOUSE_KEYS) / sizeof(MOUSE_KEYS[0]
 
 static const gamepad_profile* find_profile(int id) {
     for (const auto& p : PROFILES) if (p.id == id) return &p;
-    return &PROFILES[0];  // fallback Xbox 360
+    return &PROFILES[0];  // fallback Xbox
 }
 
 // Axis ranges matching real Xbox 360 reports
