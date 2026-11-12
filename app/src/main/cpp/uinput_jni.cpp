@@ -1015,10 +1015,26 @@ static void evdev_reader_thread_func() {
             auto has_abs_code = [&](int code) {
                 return (abs_bitmask[code / 8] & (1 << (code % 8))) != 0;
             };
+            // Include the common legacy joystick button range too. The event
+            // mapper below already understands these BTN_TRIGGER/BTN_THUMB/etc.
+            // codes; omitting them here caused some older generic pads to be
+            // rejected before their supported button events could be read.
             const bool has_gamepad_button =
                 has_key_code(BTN_SOUTH) || has_key_code(BTN_EAST) ||
                 has_key_code(BTN_NORTH) || has_key_code(BTN_WEST) ||
-                has_key_code(BTN_GAMEPAD) || has_key_code(BTN_JOYSTICK);
+                has_key_code(BTN_GAMEPAD) || has_key_code(BTN_JOYSTICK) ||
+                has_key_code(BTN_TRIGGER) || has_key_code(BTN_THUMB) ||
+                has_key_code(BTN_THUMB2) || has_key_code(BTN_TOP) ||
+                has_key_code(BTN_C) || has_key_code(BTN_Z) ||
+                has_key_code(BTN_TOP2) || has_key_code(BTN_PINKIE) ||
+                has_key_code(BTN_BASE) || has_key_code(BTN_BASE2) ||
+                has_key_code(BTN_BASE3) || has_key_code(BTN_BASE4) ||
+                has_key_code(BTN_BASE5) || has_key_code(BTN_BASE6) ||
+                has_key_code(BTN_SELECT) || has_key_code(BTN_START) ||
+                has_key_code(BTN_MODE) || has_key_code(BTN_TL) ||
+                has_key_code(BTN_TR) || has_key_code(BTN_TL2) ||
+                has_key_code(BTN_TR2) || has_key_code(BTN_THUMBL) ||
+                has_key_code(BTN_THUMBR);
             const bool has_stick_pair =
                 has_abs_code(ABS_X) && has_abs_code(ABS_Y);
             int selected_hat_x = -1;
@@ -1052,8 +1068,9 @@ static void evdev_reader_thread_func() {
                 }
             } else if (g_target_device_filter != "ANY" && !g_target_device_filter.empty()) {
                 bool match_uniq = !uniq_str.empty() && contains_ic(uniq_str, g_target_device_filter);
+                bool match_phys = !phys_str.empty() && contains_ic(phys_str, g_target_device_filter);
                 bool match_name = !name_str.empty() && contains_ic(name_str, g_target_device_filter);
-                if (!match_uniq && !match_name) {
+                if (!match_uniq && !match_phys && !match_name) {
                     close(fd);
                     continue;
                 }
