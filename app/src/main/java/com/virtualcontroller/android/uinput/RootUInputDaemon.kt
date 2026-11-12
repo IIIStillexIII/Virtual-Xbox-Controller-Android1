@@ -188,7 +188,9 @@ class RootUInputDaemon private constructor() {
             // A disconnected app must not leave a virtual controller attached.
             try { UInputNative.stopEvdevReader() } catch (_: Throwable) {}
             try { UInputNative.destroy() } catch (_: Throwable) {}
-            return true
+            // The input socket accepts one client per daemon process; exit so the next
+            // app session starts with a fresh pair of control/input sockets.
+            return false
         }
     }
 }
