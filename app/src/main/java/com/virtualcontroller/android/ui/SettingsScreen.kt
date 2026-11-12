@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import com.virtualcontroller.android.Prefs
+import com.virtualcontroller.android.InjectionBackend
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -38,6 +39,9 @@ import java.util.Locale
 fun SettingsScreen(
     themeMode: ThemeMode,
     onThemeMode: (ThemeMode) -> Unit,
+    injectionBackend: InjectionBackend,
+    onInjectionBackend: (InjectionBackend) -> Unit,
+    serviceRunning: Boolean,
     onOpen: (SubScreen) -> Unit,
     onGithub: () -> Unit,
     onCheckUpdates: () -> Unit,
@@ -68,6 +72,35 @@ fun SettingsScreen(
             stringResource(R.string.btn_debug), onClick = { onOpen(SubScreen.DEBUG) },
             subtitle = stringResource(R.string.main_action_debug_desc), icon = painterResource(R.drawable.ic_debug),
         )
+
+        SectionTitle("Input backend", painterResource(R.drawable.ic_settings))
+        DividedCard(listOf(
+            {
+                ChoiceRow(
+                    "Root",
+                    injectionBackend == InjectionBackend.ROOT,
+                    { onInjectionBackend(InjectionBackend.ROOT) },
+                    enabled = !serviceRunning,
+                    subtitle = "Create the virtual controller through root access",
+                )
+            },
+            {
+                ChoiceRow(
+                    "Shizuku",
+                    injectionBackend == InjectionBackend.SHIZUKU,
+                    { onInjectionBackend(InjectionBackend.SHIZUKU) },
+                    enabled = !serviceRunning,
+                    subtitle = "Create the virtual controller through Shizuku",
+                )
+            },
+        ))
+        if (serviceRunning) {
+            Text(
+                "Stop the controller before changing the injection backend.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
         SectionTitle("Connection", painterResource(R.drawable.ic_usb))
         val context = LocalContext.current
