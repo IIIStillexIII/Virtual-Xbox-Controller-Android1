@@ -879,15 +879,19 @@ static void evdev_reader_thread_func() {
 
     uint64_t last_rescan_ms = 0;
     uint64_t last_stream_ms = 0;
+    bool hotplug_rescan_pending = false;
 
     while (g_evdev_running.load()) {
         struct timespec ts;
         clock_gettime(CLOCK_MONOTONIC, &ts);
         uint64_t now_ms = (uint64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 
-        if ((hotplug_fd < 0 && open_fds.empty()) || (now_ms - last_rescan_ms) > 2000) {
+        if (hotplug_rescan_pending ||
+            (hotplug_fd < 0 && open_fds.empty()) ||
+            (now_ms - last_rescan_ms) > 2000) {
             rescan_devices();
             last_rescan_ms = now_ms;
+            hotplug_rescan_pending = false;
         }
 
         if (open_fds.empty() && hotplug_fd < 0) {
@@ -935,8 +939,9 @@ static void evdev_reader_thread_func() {
                 }
             }
             if (should_rescan) {
-                rescan_devices();
-                last_rescan_ms = now_ms;
+                // Defer vector mutation until the next loop iteration: the current
+                // pollfd array still indexes the pre-rescan open_fds vector.
+                hotplug_rescan_pending = true;
             }
         }
 
