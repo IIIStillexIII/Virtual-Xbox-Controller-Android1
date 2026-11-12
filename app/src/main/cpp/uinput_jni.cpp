@@ -617,6 +617,12 @@ static void evdev_reader_thread_func() {
         int fd;
         std::string path;
         std::string name;
+        std::string phys;
+        std::string uniq;
+        struct input_id id{};
+        bool has_gamepad_button{false};
+        bool has_hat_x{false};
+        bool has_hat_y{false};
         struct input_absinfo abs_x{};
         struct input_absinfo abs_y{};
         struct input_absinfo abs_rx{};
@@ -874,11 +880,14 @@ static void evdev_reader_thread_func() {
 
             char dev_name[256] = "Unknown";
             char dev_uniq[256] = "";
+            char dev_phys[256] = "";
             ioctl(fd, EVIOCGNAME(sizeof(dev_name) - 1), dev_name);
             ioctl(fd, EVIOCGUNIQ(sizeof(dev_uniq) - 1), dev_uniq);
+            ioctl(fd, EVIOCGPHYS(sizeof(dev_phys) - 1), dev_phys);
 
             std::string name_str(dev_name);
             std::string uniq_str(dev_uniq);
+            std::string phys_str(dev_phys);
 
             // Ignore the source Steam Controller's own HID interfaces and our
             // synthetic output devices. Physical Xbox and DualSense pads must NOT be
@@ -957,6 +966,12 @@ static void evdev_reader_thread_func() {
             dev.fd = fd;
             dev.path = path;
             dev.name = name_str;
+            dev.phys = phys_str;
+            dev.uniq = uniq_str;
+            ioctl(fd, EVIOCGID, &dev.id);
+            dev.has_gamepad_button = has_gamepad_button;
+            dev.has_hat_x = has_abs_code(ABS_HAT0X);
+            dev.has_hat_y = has_abs_code(ABS_HAT0Y);
 
             // Reuse the axis capability bitmap collected above.
             auto has_abs_cap = [&](int code) {
@@ -980,7 +995,14 @@ static void evdev_reader_thread_func() {
             ioctl(fd, EVIOCGABS(ABS_BRAKE), &dev.abs_brake);
             ioctl(fd, EVIOCGABS(ABS_GAS), &dev.abs_gas);
 
-            LOGI("evdev_reader opened: %s (\"%s\") fd=%d", path.c_str(), name_str.c_str(), fd);
+            LOGI("evdev_reader opened: %s name=\"%s\" phys=\"%s\" uniq=\"%s\" "
+                 "bus=%04x vid=%04x pid=%04x ver=%04x keys=%d sticks=%d%d%d%d "
+                 "triggers=%d%d%d%d hats=%d%d fd=%d",
+                 path.c_str(), name_str.c_str(), phys_str.c_str(), uniq_str.c_str(),
+                 dev.id.bustype, dev.id.vendor, dev.id.product, dev.id.version,
+                 dev.has_gamepad_button, dev.has_x, dev.has_y, dev.has_rx, dev.has_ry,
+                 dev.has_z, dev.has_rz, dev.has_brake, dev.has_gas,
+                 dev.has_hat_x, dev.has_hat_y, fd);
             open_fds.push_back(dev);
             send_report();
         }
