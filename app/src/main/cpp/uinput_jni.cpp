@@ -1421,14 +1421,14 @@ static void evdev_reader_thread_func() {
                     struct input_absinfo current{};
                     if (ioctl(dev.fd, EVIOCGABS(code), &current) < 0) {
                         ambiguous = false;
-                        LOGW("evdev_reader: cannot inspect ambiguous ABS_%s; keeping trigger mapping",
+                        LOGE("evdev_reader: cannot inspect ambiguous ABS_%s; keeping trigger mapping",
                              code == ABS_Z ? "Z" : "RZ");
                         return;
                     }
                     const int64_t span = static_cast<int64_t>(current.maximum) - current.minimum;
                     if (span < 8) {
                         ambiguous = false;
-                        LOGW("evdev_reader: invalid range for ambiguous ABS_%s; keeping trigger mapping",
+                        LOGE("evdev_reader: invalid range for ambiguous ABS_%s; keeping trigger mapping",
                              code == ABS_Z ? "Z" : "RZ");
                         return;
                     }
