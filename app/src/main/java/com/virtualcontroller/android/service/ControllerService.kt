@@ -372,9 +372,8 @@ class ControllerService : Service() {
         // Steam Controller has a vendor-specific protocol and must keep its dedicated path.
         // Xbox and DualSense use the kernel evdev nodes instead of Steam HID reports.
         if (dev.vendorId != UsbConnectionManager.STEAM_VID) {
-            val productName = try { dev.productName } catch (_: Throwable) { null }
-            val filter = productName?.takeIf { it.isNotBlank() } ?: "ANY"
-            Log.i(TAG, "Starting USB gamepad evdev reader: name='$filter', VID=0x${dev.vendorId.toString(16)}, PID=0x${dev.productId.toString(16)}")
+            val filter = "VIDPID:${dev.vendorId.toString(16)}:${dev.productId.toString(16)}"
+            Log.i(TAG, "Starting USB gamepad evdev reader: filter=$filter")
             uinput.startEvdevReader(inputEventListener, filter)
             return true
         }
