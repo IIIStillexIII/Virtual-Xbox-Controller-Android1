@@ -110,7 +110,7 @@ class RootUInputDaemon private constructor() {
             return command.size == 3 &&
                 command[0] == "screencap" &&
                 command[1] == "-p" &&
-                Regex("^/sdcard/Pictures/Screenshots/SteamCtrl_[0-9]{8}_[0-9]{6}\\\\.png$").matches(command[2])
+                Regex("^/sdcard/Pictures/Screenshots/SteamCtrl_[0-9]{8}_[0-9]{6}\\.png$").matches(command[2])
         }
 
         private fun isAllowedRootOutputCommand(command: List<String>): Boolean =
