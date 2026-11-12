@@ -293,9 +293,7 @@ class MainActivity : ComponentActivity() {
         Prefs.getAutoLaunch(this) &&
             Prefs.getTransport(this) == Transport.USB &&
             device.vendorId == UsbConnectionManager.STEAM_VID &&
-            (getSystemService(USB_SERVICE) as UsbManager).hasPermission(device) &&
-            Shizuku.pingBinder() &&
-            Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+            (getSystemService(USB_SERVICE) as UsbManager).hasPermission(device)
 
     /** Re-read everything a loaded game profile may have overwritten. */
     private fun syncFromPrefs() {
@@ -381,21 +379,16 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun checkPermissionsAndStart() {
-        when {
-            !Shizuku.pingBinder() -> {
-                log("Shizuku not running")
-                Toast.makeText(this, getString(R.string.shizuku_not_running), Toast.LENGTH_LONG).show()
-            }
-            Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED -> {
-                Shizuku.requestPermission(shizukuRequestCode)
-            }
-            else -> {
-                shizukuReady = true
-                when (Prefs.getTransport(this)) {
-                    Transport.USB       -> checkAndRequestUsb()
-                    Transport.BLUETOOTH -> startBluetoothService()
-                }
-            }
+        // Root uinput is the primary backend. Shizuku is an optional fallback, so
+        // its availability or permission must not block a root-capable device.
+        shizukuReady = Shizuku.pingBinder() &&
+            Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+        if (!shizukuReady) {
+            log("Starting with Root uinput first; Shizuku fallback is not currently authorized")
+        }
+        when (Prefs.getTransport(this)) {
+            Transport.USB       -> checkAndRequestUsb()
+            Transport.BLUETOOTH -> startBluetoothService()
         }
     }
 
