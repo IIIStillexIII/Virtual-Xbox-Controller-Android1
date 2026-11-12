@@ -834,6 +834,16 @@ static void evdev_reader_thread_func() {
         int poll_res = poll(pfds.data(), (nfds_t)pfds.size(), 10);
         bool state_changed = false;
 
+        if (poll_res < 0) {
+            if (errno == EINTR) continue;
+            // Avoid a tight CPU loop if poll fails for a persistent system error.
+            // Keep the reader alive so the next iteration can rescan device nodes.
+            LOGE("evdev_reader: poll failed: %s", strerror(errno));
+            struct timespec retry_delay = {0, 10 * 1000 * 1000};
+            nanosleep(&retry_delay, nullptr);
+            continue;
+        }
+
         if (poll_res > 0) {
             for (size_t i = 0; i < pfds.size(); i++) {
                 if (!(pfds[i].revents & POLLIN)) {
