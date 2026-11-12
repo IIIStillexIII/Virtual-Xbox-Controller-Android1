@@ -496,7 +496,8 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
         lastFrameButtons = state.buttons
 
         try {
-            svc?.sendMouseFrame(relX, relY, scrollTicks, keys)
+            if (rootDeviceReady) rootBackend.sendMouseFrame(relX, relY, scrollTicks, keys)
+            else svc?.sendMouseFrame(relX, relY, scrollTicks, keys)
         } catch (t: Throwable) {
             Log.e(TAG, "sendMouseFrame IPC failed: ${t.message}")
         }
