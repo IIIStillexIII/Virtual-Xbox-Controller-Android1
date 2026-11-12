@@ -117,7 +117,7 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
         }
         override fun onServiceDisconnected(name: ComponentName?) {
             service = null
-            deviceReady = false
+            deviceReady = rootDeviceReady
             Log.w(TAG, "UInputService disconnected")
         }
     }
@@ -225,7 +225,7 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
         rumbleThread = null
     }
 
-    val isReady get() = deviceReady
+    val isReady get() = service != null && deviceReady
 
     /**
      * Swap the emulated controller profile without unbinding the user service.
