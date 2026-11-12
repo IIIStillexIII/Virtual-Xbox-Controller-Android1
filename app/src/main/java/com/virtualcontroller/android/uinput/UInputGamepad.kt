@@ -48,7 +48,7 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
     private fun handleSpecialAction(target: XboxTarget) {
         when (target) {
             XboxTarget.SCREENSHOT -> SystemActions.takeScreenshot(context) { cmd ->
-                try { service?.runShellCommand(cmd) ?: -1 } catch (_: Throwable) { -1 }
+                runShellCommand(cmd)
             }
             else -> {}
         }
@@ -135,6 +135,7 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
         }
         if (rootDeviceReady) {
             deviceReady = true
+            Thread({ applyShowImeOverride() }, "root-ime-override").apply { isDaemon = true; start() }
             Log.i(TAG, "Root uinput is the active virtual-device backend")
         } else {
             rootBackend.close()
@@ -151,7 +152,10 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
     fun unbind() {
         if (!bound) return
         stopRumbleThread()
-        try { service?.let { restoreShowImeOverride(it) } } catch (_: Throwable) {}
+        try {
+            if (rootDeviceReady) restoreShowImeOverride()
+            else service?.let { restoreShowImeOverride(it) }
+        } catch (_: Throwable) {}
         if (!rootDeviceReady) {
             try { service?.destroy() } catch (_: Throwable) {}
         }
@@ -173,29 +177,47 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
     // Forcing Settings.Secure.show_ime_with_hard_keyboard=1 via the shell UID makes Android
     // show the soft keyboard regardless. Reverted on unbind() so a real Bluetooth keyboard
     // paired later behaves normally.
-    private fun applyShowImeOverride(svc: IUInputService) {
+    private fun runShellCommand(command: Array<String>): Int {
+        return try {
+            if (rootDeviceReady) rootBackend.runShellCommand(command)
+            else service?.runShellCommand(command) ?: -1
+        } catch (t: Throwable) {
+            Log.w(TAG, "shell command failed: ${t.message}")
+            -1
+        }
+    }
+
+    private fun runShellCommandForOutput(command: Array<String>): String? {
+        return try {
+            if (rootDeviceReady) rootBackend.runShellCommandForOutput(command)
+            else service?.runShellCommandForOutput(command)
+        } catch (t: Throwable) {
+            Log.w(TAG, "shell output command failed: ${t.message}")
+            null
+        }
+    }
+
+    private fun applyShowImeOverride(svc: IUInputService? = null) {
         try {
             if (Prefs.getSavedShowImeHardKeyboard(context) == null) {
-                val current = try {
-                    svc.runShellCommandForOutput(arrayOf("settings", "get", "secure", "show_ime_with_hard_keyboard"))
-                } catch (_: Throwable) { null }
+                val current = runShellCommandForOutput(arrayOf("settings", "get", "secure", "show_ime_with_hard_keyboard"))
                 val toSave = current?.takeIf { it.isNotBlank() && it != "null" } ?: SHOW_IME_UNSET_SENTINEL
                 Prefs.setSavedShowImeHardKeyboard(context, toSave)
             }
-            svc.runShellCommand(arrayOf("settings", "put", "secure", "show_ime_with_hard_keyboard", "1"))
+            runShellCommand(arrayOf("settings", "put", "secure", "show_ime_with_hard_keyboard", "1"))
             Log.i(TAG, "show_ime_with_hard_keyboard forced on")
         } catch (t: Throwable) {
             Log.w(TAG, "applyShowImeOverride failed: ${t.message}")
         }
     }
 
-    private fun restoreShowImeOverride(svc: IUInputService) {
+    private fun restoreShowImeOverride(svc: IUInputService? = null) {
         try {
             val saved = Prefs.getSavedShowImeHardKeyboard(context) ?: return
             if (saved == SHOW_IME_UNSET_SENTINEL) {
-                svc.runShellCommand(arrayOf("settings", "delete", "secure", "show_ime_with_hard_keyboard"))
+                runShellCommand(arrayOf("settings", "delete", "secure", "show_ime_with_hard_keyboard"))
             } else {
-                svc.runShellCommand(arrayOf("settings", "put", "secure", "show_ime_with_hard_keyboard", saved))
+                runShellCommand(arrayOf("settings", "put", "secure", "show_ime_with_hard_keyboard", saved))
             }
             Prefs.clearSavedShowImeHardKeyboard(context)
             Log.i(TAG, "show_ime_with_hard_keyboard restored to '$saved'")
