@@ -17,6 +17,7 @@ class RootUInputDaemon private constructor() {
     companion object {
         private const val TAG = "RootUInputDaemon"
         private const val SOCKET_NAME = "virtual-controller-root-uinput"
+        private const val INPUT_SOCKET_NAME = "virtual-controller-root-input"
         private const val MAGIC = 0x56584331
 
         private const val OP_PING = 1
@@ -26,13 +27,32 @@ class RootUInputDaemon private constructor() {
         private const val OP_SEND_MOUSE = 5
         private const val OP_POLL_FF = 6
         private const val OP_DESTROY = 7
+        private const val OP_START_EVDEV = 8
+        private const val OP_STOP_EVDEV = 9
+        @Volatile private var inputOutput: DataOutputStream? = null
 
         @JvmStatic
         fun main(args: Array<String>) {
             try {
                 // Force JNI load before announcing that the daemon is ready.
                 UInputNative.canOpen()
-                LocalServerSocket(SOCKET_NAME).use { server ->
+                LocalServerSocket(INPUT_SOCKET_NAME).use { inputServer ->
+                    Thread({
+                        try {
+                            inputServer.accept().use { inputClient ->
+                                val stream = DataOutputStream(inputClient.outputStream)
+                                inputOutput = stream
+                                stream.writeInt(MAGIC)
+                                stream.flush()
+                                while (true) Thread.sleep(1000)
+                            }
+                        } catch (t: Throwable) {
+                            Log.w(TAG, "Root input stream closed: " + t.message)
+                        } finally {
+                            inputOutput = null
+                        }
+                    }, "root-evdev-stream").apply { isDaemon = true; start() }
+                    LocalServerSocket(SOCKET_NAME).use { server ->
                     Log.i(TAG, "Root uinput daemon listening")
                     while (true) {
                         val client = try { server.accept() } catch (t: Throwable) {
@@ -42,12 +62,30 @@ class RootUInputDaemon private constructor() {
                         val keepRunning = handleClient(client)
                         if (!keepRunning) break
                     }
+                    }
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "Root daemon stopped", t)
             } finally {
                 try { UInputNative.stopEvdevReader() } catch (_: Throwable) {}
                 try { UInputNative.destroy() } catch (_: Throwable) {}
+            }
+        }
+
+        private class RootFrameListener {
+            @Suppress("unused")
+            fun onInputFrame(report: ByteArray?) {
+                if (report == null) return
+                try {
+                    synchronized(this) {
+                        val stream = inputOutput ?: return
+                        stream.writeInt(report.size)
+                        stream.write(report)
+                        stream.flush()
+                    }
+                } catch (t: Throwable) {
+                    Log.w(TAG, "Could not forward evdev frame: " + t.message)
+                }
             }
         }
 
@@ -93,6 +131,17 @@ class RootUInputDaemon private constructor() {
                                     output.writeInt(event.size)
                                     event.forEach { output.writeInt(it) }
                                 }
+                                output.flush()
+                            }
+                            OP_START_EVDEV -> {
+                                val filter = input.readUTF()
+                                UInputNative.startEvdevReader(RootFrameListener(), filter)
+                                output.writeBoolean(true)
+                                output.flush()
+                            }
+                            OP_STOP_EVDEV -> {
+                                UInputNative.stopEvdevReader()
+                                output.writeBoolean(true)
                                 output.flush()
                             }
                             OP_DESTROY -> {
