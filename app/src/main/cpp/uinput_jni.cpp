@@ -1075,18 +1075,20 @@ static void evdev_reader_thread_func() {
                                 }
                                 state_changed = true;
                                 break;
-                            case ABS_BRAKE:
+                            case ABS_BRAKE: {
                                 const int32_t trigger = scale_axis(ev.value, dev.abs_brake.minimum, dev.abs_brake.maximum, 0, 32767);
                                 set_axis(dev, 4, trigger);
                                 if (trigger > 16384) dev.buttons |= 0x08000000; else dev.buttons &= ~0x08000000;
                                 state_changed = true;
                                 break;
-                            case ABS_GAS:
+                            }
+                            case ABS_GAS: {
                                 const int32_t trigger = scale_axis(ev.value, dev.abs_gas.minimum, dev.abs_gas.maximum, 0, 32767);
                                 set_axis(dev, 5, trigger);
                                 if (trigger > 16384) dev.buttons |= 0x00800000; else dev.buttons &= ~0x00800000;
                                 state_changed = true;
                                 break;
+                            }
                             case ABS_HAT0X:
                                 if (ev.value < 0) {
                                     dev.buttons |= 0x00001000;  // DPAD_LEFT
