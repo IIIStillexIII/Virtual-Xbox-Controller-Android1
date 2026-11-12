@@ -34,8 +34,8 @@ struct gamepad_profile {
 };
 
 static const gamepad_profile PROFILES[] = {
-    { 0, 0x045E, 0x0B12, "Xbox Wireless Controller",                                          false }, // Xbox Series X|S profile
-    { 3, 0x054C, 0x0CE6, "dualsense",                                                          false }, // PS5 DualSense profile
+    { 0, 0x045E, 0x0B12, "Virtual Xbox Controller",                                           false }, // Xbox Series X|S profile
+    { 3, 0x054C, 0x0CE6, "Virtual DualSense Controller",                                       false }, // PS5 DualSense profile
     { 4, 0x046D, 0xC077, "Steam Controller Desktop",                                          true  }, // Internal legacy mouse mode (not exposed in UI)
 };
 
@@ -700,9 +700,12 @@ static void evdev_reader_thread_func() {
             std::string name_str(dev_name);
             std::string uniq_str(dev_uniq);
 
+            // Ignore the source Steam Controller's own HID interfaces and our
+            // synthetic output devices. Physical Xbox and DualSense pads must NOT be
+            // filtered here: they are valid source controllers for this bridge.
             if (name_str.find("Steam Controller") != std::string::npos ||
-                name_str.find("Microsoft X-Box") != std::string::npos ||
-                name_str.find("Sony Interactive") != std::string::npos ||
+                name_str.find("Virtual Xbox Controller") != std::string::npos ||
+                name_str.find("Virtual DualSense Controller") != std::string::npos ||
                 name_str.find("uinput") != std::string::npos) {
                 close(fd);
                 continue;
