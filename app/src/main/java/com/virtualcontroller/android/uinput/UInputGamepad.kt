@@ -34,6 +34,9 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
         private const val SHOW_IME_UNSET_SENTINEL = "__unset__"
     }
     private var service: IUInputService? = null
+    // Root owns virtual output when available; Shizuku remains the evdev reader/fallback.
+    private val rootBackend = RootUInputBackend(context)
+    @Volatile private var rootDeviceReady = false
     private var bound = false
     @Volatile private var profile: GamepadProfile = initialProfile
 
@@ -94,13 +97,18 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
             // Binder calls can block — do them off the main thread
             Thread {
                 try {
-                    if (svc.canCreateDevice()) {
-                        val ok = svc.createGamepad(profile.id)
-                        deviceReady = ok
-                        Log.i(TAG, "createGamepad(${profile.displayName}) → $ok")
-                        if (ok) applyShowImeOverride(svc)
+                    if (!rootDeviceReady) {
+                        if (svc.canCreateDevice()) {
+                            val ok = svc.createGamepad(profile.id)
+                            deviceReady = ok
+                            Log.i(TAG, "Shizuku createGamepad(${profile.displayName}) → $ok")
+                            if (ok) applyShowImeOverride(svc)
+                        } else {
+                            Log.e(TAG, "Cannot open /dev/uinput from Shizuku shell UID")
+                        }
                     } else {
-                        Log.e(TAG, "Cannot open /dev/uinput from shell UID — SELinux likely blocks it on this device")
+                        deviceReady = true
+                        Log.i(TAG, "Root uinput output active; Shizuku retained for evdev input")
                     }
                 } catch (t: Throwable) {
                     Log.e(TAG, "init failed: ${t.message}")
@@ -116,6 +124,19 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
 
     fun bind() {
         if (bound) return
+        rootDeviceReady = try {
+            rootBackend.start() && rootBackend.canOpen() && rootBackend.createDevice(profile.id)
+        } catch (t: Throwable) {
+            Log.w(TAG, "Root uinput unavailable; using Shizuku fallback: ${t.message}")
+            false
+        }
+        if (rootDeviceReady) {
+            deviceReady = true
+            Log.i(TAG, "Root uinput is the active virtual-device backend")
+        } else {
+            rootBackend.close()
+            Log.i(TAG, "Root uinput unavailable; Shizuku will create the virtual device")
+        }
         Shizuku.bindUserService(args, connection)
         bound = true
         startRumbleThread()
@@ -124,11 +145,16 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
     fun unbind() {
         if (!bound) return
         stopRumbleThread()
-        try { service?.let { restoreShowImeOverride(it) } } catch (_: Throwable) {}
-        try { service?.destroy() } catch (_: Throwable) {}
+        if (!rootDeviceReady) {
+            try { service?.let { restoreShowImeOverride(it) } } catch (_: Throwable) {}
+            try { service?.destroy() } catch (_: Throwable) {}
+        }
+        try { rootBackend.close() } catch (_: Throwable) {}
+        rootDeviceReady = false
         Shizuku.unbindUserService(args, connection, true)
         bound = false
         service = null
+        deviceReady = false
     }
 
     // Android's InputManager treats a connected HID keyboard-classified device as a
@@ -181,8 +207,8 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
             while (rumbleThreadRunning) {
                 try {
                     val svc = service
-                    if (svc != null && deviceReady) {
-                        val rumble = svc.pollForceFeedback()
+                    if (deviceReady) {
+                        val rumble = if (rootDeviceReady) rootBackend.pollForceFeedback() else svc?.pollForceFeedback()
                         if (rumble != null && rumble.size == 2) {
                             onRumble?.invoke(rumble[0], rumble[1])
                         }
@@ -199,7 +225,7 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
         rumbleThread = null
     }
 
-    val isReady get() = service != null && deviceReady
+    val isReady get() = deviceReady
 
     /**
      * Swap the emulated controller profile without unbinding the user service.
@@ -207,9 +233,11 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
      * Returns true on success.
      */
     fun switchProfile(newProfile: GamepadProfile): Boolean {
-        val svc = service ?: return false
+        val svc = service
+        if (!rootDeviceReady && svc == null) return false
         return try {
-            val ok = svc.createGamepad(newProfile.id)
+            val ok = if (rootDeviceReady) rootBackend.createDevice(newProfile.id)
+                     else svc?.createGamepad(newProfile.id) == true
             if (ok) {
                 profile = newProfile
                 Log.i(TAG, "Switched profile to ${newProfile.displayName}")
@@ -300,13 +328,11 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
         val ry = -ryCalRaw.coerceAtLeast(-32767)
 
         try {
-            svc.sendFrame(
-                xboxButtons,
-                lxCal, ly,
-                rxCal, ry,
-                lt, rt,
-                dpadX, dpadY
-            )
+            if (rootDeviceReady) {
+                rootBackend.sendFrame(xboxButtons, lxCal, ly, rxCal, ry, lt, rt, dpadX, dpadY)
+            } else {
+                svc.sendFrame(xboxButtons, lxCal, ly, rxCal, ry, lt, rt, dpadX, dpadY)
+            }
         } catch (t: Throwable) {
             Log.e(TAG, "sendFrame IPC failed: ${t.message}")
         }
@@ -344,7 +370,8 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
         }
         if (relX == 0 && relY == 0 && scrollTicks == 0 && keys == 0) return
         try {
-            svc.sendMouseFrame(relX, relY, scrollTicks, keys)
+            if (rootDeviceReady) rootBackend.sendMouseFrame(relX, relY, scrollTicks, keys)
+            else svc.sendMouseFrame(relX, relY, scrollTicks, keys)
         } catch (t: Throwable) {
             Log.e(TAG, "sendMouseFrame (sidecar) IPC failed: ${t.message}")
         }
