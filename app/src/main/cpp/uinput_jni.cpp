@@ -781,8 +781,7 @@ static void evdev_reader_thread_func() {
             dev.path = path;
             dev.name = name_str;
 
-            uint8_t abs_bitmask[ABS_MAX / 8 + 1] = {0};
-            ioctl(fd, EVIOCGBIT(EV_ABS, sizeof(abs_bitmask)), abs_bitmask);
+            // Reuse the axis capability bitmap collected above.
             dev.has_rx = (abs_bitmask[ABS_RX / 8] & (1 << (ABS_RX % 8))) != 0;
             dev.has_ry = (abs_bitmask[ABS_RY / 8] & (1 << (ABS_RY % 8))) != 0;
 
