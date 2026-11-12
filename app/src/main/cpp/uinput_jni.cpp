@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <string.h>
+#include <stdio.h>
 #include <errno.h>
 #include <time.h>
 #include <dirent.h>
