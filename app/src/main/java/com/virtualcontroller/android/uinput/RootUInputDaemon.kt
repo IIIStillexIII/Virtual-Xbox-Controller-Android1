@@ -179,8 +179,8 @@ class RootUInputDaemon private constructor() {
                             }
                             OP_START_EVDEV -> {
                                 val filter = input.readUTF()
-                                UInputNative.startEvdevReader(RootFrameListener(), filter)
-                                output.writeBoolean(true)
+                                val started = UInputNative.startEvdevReader(RootFrameListener(), filter)
+                                output.writeBoolean(started)
                                 output.flush()
                             }
                             OP_STOP_EVDEV -> {
