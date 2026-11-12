@@ -117,8 +117,11 @@ class MainActivity : ComponentActivity() {
         if (grantResult == PackageManager.PERMISSION_GRANTED) {
             log("Shizuku permission granted")
             shizukuReady = true
-            checkAndRequestUsb()
+            val pending = pendingUsbDevice
+            pendingUsbDevice = null
+            checkPermissionsAndStart(pending)
         } else {
+            pendingUsbDevice = null
             log("Shizuku permission denied")
             Toast.makeText(this, getString(R.string.shizuku_permission_denied), Toast.LENGTH_LONG).show()
         }
