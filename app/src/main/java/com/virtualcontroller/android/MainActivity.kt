@@ -52,6 +52,8 @@ class MainActivity : ComponentActivity() {
     // USB and service callbacks below are what change it.
     private var serviceRunning by mutableStateOf(false)
     private var shizukuReady by mutableStateOf(false)
+    private var injectionBackend by mutableStateOf(InjectionBackend.ROOT)
+    private var pendingUsbDevice: UsbDevice? = null
     private var transport by mutableStateOf(Transport.USB)
     private var profile by mutableStateOf(GamepadProfile.XBOX)
     private var pairedBtDevices by mutableStateOf<List<BluetoothDevice>>(emptyList())
@@ -78,7 +80,7 @@ class MainActivity : ComponentActivity() {
                     val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
                     if (granted) {
                         val device: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
-                        device?.let { startControllerService(it) }
+                        device?.let { checkPermissionsAndStart(it) }
                     } else {
                         log("USB permission denied")
                         Toast.makeText(this@MainActivity, "USB permission denied", Toast.LENGTH_SHORT).show()
@@ -127,6 +129,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         themeMode = Prefs.getThemeMode(this)
+        injectionBackend = Prefs.getInjectionBackend(this)
         transport = Prefs.getTransport(this)
         profile = Prefs.getProfile(this)
         btAddress = Prefs.getBluetoothAddress(this)
@@ -259,6 +262,13 @@ class MainActivity : ComponentActivity() {
                         AppTab.SETTINGS -> SettingsScreen(
                             themeMode = themeMode,
                             onThemeMode = { themeMode = it; Prefs.setThemeMode(this, it) },
+                            injectionBackend = injectionBackend,
+                            onInjectionBackend = { backend ->
+                                injectionBackend = backend
+                                Prefs.setInjectionBackend(this, backend)
+                                log("Injection backend selected: ${backend.displayName}; applies on next service start")
+                            },
+                            serviceRunning = serviceRunning,
                             onOpen = { sub = it },
                             onGithub = ::openGithubRepo,
                             onCheckUpdates = { checkForUpdates(manual = true) },
@@ -295,7 +305,9 @@ class MainActivity : ComponentActivity() {
         Prefs.getAutoLaunch(this) &&
             Prefs.getTransport(this) == Transport.USB &&
             device.vendorId == UsbConnectionManager.STEAM_VID &&
-            (getSystemService(USB_SERVICE) as UsbManager).hasPermission(device)
+            (getSystemService(USB_SERVICE) as UsbManager).hasPermission(device) &&
+            (Prefs.getInjectionBackend(this) == InjectionBackend.ROOT ||
+                (Shizuku.pingBinder() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED))
 
     /** Re-read everything a loaded game profile may have overwritten. */
     private fun syncFromPrefs() {
@@ -380,16 +392,49 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun checkPermissionsAndStart() {
-        // Root uinput is the primary backend. Shizuku is an optional fallback, so
-        // its availability or permission must not block a root-capable device.
-        shizukuReady = Shizuku.pingBinder() &&
-            Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-        if (!shizukuReady) {
-            log("Starting with Root uinput first; Shizuku fallback is not currently authorized")
+    private fun checkPermissionsAndStart(preferredUsbDevice: UsbDevice? = null) {
+        when (Prefs.getInjectionBackend(this)) {
+            InjectionBackend.ROOT -> {
+                shizukuReady = Shizuku.pingBinder() &&
+                    Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+                continueStartForSelectedTransport(preferredUsbDevice)
+            }
+            InjectionBackend.SHIZUKU -> {
+                if (!Shizuku.pingBinder()) {
+                    shizukuReady = false
+                    Toast.makeText(this, "Start Shizuku and try again.", Toast.LENGTH_LONG).show()
+                    log("Selected Shizuku backend is unavailable: Shizuku service is not running")
+                    return
+                }
+                if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+                    pendingUsbDevice = preferredUsbDevice
+                    log("Requesting Shizuku permission for the selected backend")
+                    Shizuku.requestPermission(shizukuRequestCode)
+                    return
+                }
+                shizukuReady = true
+                continueStartForSelectedTransport(preferredUsbDevice)
+            }
         }
+    }
+
+    private fun continueStartForSelectedTransport(preferredUsbDevice: UsbDevice?) {
         when (Prefs.getTransport(this)) {
-            Transport.USB       -> checkAndRequestUsb()
+            Transport.USB -> {
+                if (preferredUsbDevice == null) {
+                    checkAndRequestUsb()
+                } else if (preferredUsbDevice.vendorId != UsbConnectionManager.STEAM_VID ||
+                    (getSystemService(USB_SERVICE) as UsbManager).hasPermission(preferredUsbDevice)) {
+                    startControllerService(preferredUsbDevice)
+                } else {
+                    val permIntent = PendingIntent.getBroadcast(
+                        this, 0, Intent(usbPermissionAction),
+                        PendingIntent.FLAG_IMMUTABLE,
+                    )
+                    (getSystemService(USB_SERVICE) as UsbManager).requestPermission(preferredUsbDevice, permIntent)
+                    log("Requesting Steam Controller USB permission...")
+                }
+            }
             Transport.BLUETOOTH -> startBluetoothService()
         }
     }
@@ -451,11 +496,11 @@ class MainActivity : ComponentActivity() {
     private fun onDeviceAttached(device: UsbDevice) {
         if (device.vendorId == UsbConnectionManager.STEAM_VID) {
             log("Steam Controller attached")
-            checkPermissionsAndStart()
+            checkPermissionsAndStart(device)
         } else if (isEvdevGamepadCandidate(device)) {
             log("USB HID device attached: VID=0x${device.vendorId.toString(16)} PID=0x${device.productId.toString(16)}")
             if (Prefs.getTransport(this) == Transport.USB && !serviceRunning) {
-                startControllerService(device)
+                checkPermissionsAndStart(device)
             }
         }
     }
@@ -485,6 +530,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         shizukuReady = Shizuku.pingBinder() &&
             Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+        injectionBackend = Prefs.getInjectionBackend(this)
         // Profile may have changed from the notification while paused.
         profile = Prefs.getProfile(this)
         maybeAutoCheckForUpdates()
