@@ -1032,9 +1032,10 @@ static void evdev_reader_thread_func() {
                     break;
                 }
             }
+            // A hat pair is a D-pad, not a second analog stick. Do not use
+            // ABS_HAT capabilities as evidence of a dual-stick gamepad.
             const bool has_secondary_stick =
-                (has_abs_code(ABS_RX) && has_abs_code(ABS_RY)) ||
-                (selected_hat_x >= 0 && selected_hat_y >= 0);
+                has_abs_code(ABS_RX) && has_abs_code(ABS_RY);
             if (!has_gamepad_button && !(has_stick_pair && has_secondary_stick)) {
                 close(fd);
                 continue;
