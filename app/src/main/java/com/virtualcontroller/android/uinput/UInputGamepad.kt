@@ -44,6 +44,7 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
 
     /** Set by ControllerService to receive rumble commands from games. (strong, weak) ∈ [0, 65535]. */
     var onRumble: ((strong: Int, weak: Int) -> Unit)? = null
+    var onBackendFailure: (() -> Unit)? = null
 
     private fun handleSpecialAction(target: XboxTarget) {
         when (target) {
@@ -284,6 +285,13 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
 
     // Push one HID frame from the SC2026 parser, translated to Xbox 360 layout.
     fun pushFrame(state: SteamControllerState) {
+        if (rootDeviceReady && !rootBackend.isReady) {
+            rootDeviceReady = false
+            deviceReady = false
+            Log.e(TAG, "Root daemon disconnected; virtual controller is no longer available")
+            onBackendFailure?.invoke()
+            return
+        }
         val svc = service
         if (!rootDeviceReady && svc == null) return
 
