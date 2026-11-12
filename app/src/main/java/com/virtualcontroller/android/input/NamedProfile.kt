@@ -23,10 +23,14 @@ data class NamedProfile(
     val leftCenterY: Int,
     val leftDeadzone: Int,
     val leftInvertY: Boolean,
+    val leftInvertX: Boolean = false,
+    val leftSensitivity: Float = 1.0f,
     val rightCenterX: Int,
     val rightCenterY: Int,
     val rightDeadzone: Int,
     val rightInvertY: Boolean,
+    val rightInvertX: Boolean = false,
+    val rightSensitivity: Float = 1.0f,
     val mouseSensitivity: Float,
     val trackpadAsMouse: Boolean,
     val rumbleIntensity: Int,
@@ -41,8 +45,10 @@ data class NamedProfile(
         put(KEY_TRANSPORT, transport)
         put(KEY_LCX, leftCenterX); put(KEY_LCY, leftCenterY)
         put(KEY_LDZ, leftDeadzone); put(KEY_LIY, leftInvertY)
+        put(KEY_LIX, leftInvertX); put(KEY_LS, leftSensitivity.toDouble())
         put(KEY_RCX, rightCenterX); put(KEY_RCY, rightCenterY)
         put(KEY_RDZ, rightDeadzone); put(KEY_RIY, rightInvertY)
+        put(KEY_RIX, rightInvertX); put(KEY_RS, rightSensitivity.toDouble())
         put(KEY_MS, mouseSensitivity.toDouble())
         put(KEY_TAM, trackpadAsMouse)
         put(KEY_RI, rumbleIntensity)
@@ -57,8 +63,10 @@ data class NamedProfile(
         private const val KEY_TRANSPORT = "transport"
         private const val KEY_LCX = "lcx"; private const val KEY_LCY = "lcy"
         private const val KEY_LDZ = "ldz"; private const val KEY_LIY = "liy"
+        private const val KEY_LIX = "lix"; private const val KEY_LS = "ls"
         private const val KEY_RCX = "rcx"; private const val KEY_RCY = "rcy"
         private const val KEY_RDZ = "rdz"; private const val KEY_RIY = "riy"
+        private const val KEY_RIX = "rix"; private const val KEY_RS = "rs"
         private const val KEY_MS = "mouseSens"
         private const val KEY_TAM = "trackpadAsMouse"
         private const val KEY_RI = "rumbleIntensity"
@@ -82,10 +90,14 @@ data class NamedProfile(
                 leftCenterY = obj.optInt(KEY_LCY, 0),
                 leftDeadzone = obj.optInt(KEY_LDZ, 8),
                 leftInvertY = obj.optBoolean(KEY_LIY, false),
+                leftInvertX = obj.optBoolean(KEY_LIX, false),
+                leftSensitivity = obj.optDouble(KEY_LS, 1.0).toFloat().coerceIn(0.2f, 3.0f),
                 rightCenterX = obj.optInt(KEY_RCX, 0),
                 rightCenterY = obj.optInt(KEY_RCY, 0),
                 rightDeadzone = obj.optInt(KEY_RDZ, 8),
                 rightInvertY = obj.optBoolean(KEY_RIY, false),
+                rightInvertX = obj.optBoolean(KEY_RIX, false),
+                rightSensitivity = obj.optDouble(KEY_RS, 1.0).toFloat().coerceIn(0.2f, 3.0f),
                 mouseSensitivity = obj.optDouble(KEY_MS, 1.0).toFloat(),
                 trackpadAsMouse = obj.optBoolean(KEY_TAM, true),
                 rumbleIntensity = obj.optInt(KEY_RI, 100),
