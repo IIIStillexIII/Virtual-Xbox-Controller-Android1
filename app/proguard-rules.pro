@@ -1,0 +1,2 @@
+-keep class rikka.shizuku.** { *; }
+-keep class com.virtualcontroller.android.** { *; }
