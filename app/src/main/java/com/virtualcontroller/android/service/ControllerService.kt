@@ -203,19 +203,20 @@ class ControllerService : Service() {
 
         Log.i(TAG, "Auto-switch → '${bound.name}' (foreground=$current, activeMatches=$activeMatches, liveMatches=$liveProfileMatches)")
         val previousProfile = Prefs.getProfile(this)
-        Prefs.applyNamedProfile(this, bound)
 
-        // Live-swap the virtual device before advertising the new profile as active.
+        // Live-swap the virtual device before applying any saved settings. A failed
+        // device recreation must not partially apply a named profile to preferences.
         if (mode == InjectionMode.UINPUT) {
             profileSwitchInFlight = true
             scope.launch {
                 try {
                     val gp = com.virtualcontroller.android.uinput.GamepadProfile.fromId(bound.profileId)
                     if (uinput.switchProfile(gp)) {
+                        Prefs.applyNamedProfile(this@ControllerService, bound)
                         announceProfileLoaded(bound.name)
                         _profileFlow.value = bound.profileId
                     } else {
-                        Log.w(TAG, "Auto-switch to '${bound.name}' failed; restoring ${previousProfile.displayName}")
+                        Log.w(TAG, "Auto-switch to '${bound.name}' failed; keeping ${previousProfile.displayName} and current settings")
                         Prefs.setProfile(this@ControllerService, previousProfile)
                         _profileFlow.value = previousProfile.id
                     }
@@ -225,6 +226,7 @@ class ControllerService : Service() {
                 }
             }
         } else {
+            Prefs.applyNamedProfile(this, bound)
             announceProfileLoaded(bound.name)
             _profileFlow.value = bound.profileId
             refreshNotification()
