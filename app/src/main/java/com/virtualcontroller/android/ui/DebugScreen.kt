@@ -182,7 +182,7 @@ fun DebugScreen(onBack: () -> Unit) {
 }
 
 private fun readAndroidInputDevices(inputManager: InputManager): List<String> =
-    inputManager.inputDeviceIds.mapNotNull { id ->
+    InputDevice.getDeviceIds().mapNotNull { id ->
         val device = inputManager.getInputDevice(id) ?: return@mapNotNull null
         val supportsGamepad = device.supportsSource(InputDevice.SOURCE_GAMEPAD)
         val supportsJoystick = device.supportsSource(InputDevice.SOURCE_JOYSTICK)
