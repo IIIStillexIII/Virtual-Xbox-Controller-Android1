@@ -120,6 +120,10 @@ class ControllerService : Service() {
         btManager = BluetoothHidManager(this)
         uinput = UInputGamepad(this, Prefs.getProfile(this))
         uinput.onRumble = { strong, weak -> forwardRumble(strong, weak) }
+        uinput.onBackendFailure = {
+            Log.e(TAG, "Virtual controller backend failed; stopping controller service")
+            stopSelf()
+        }
         createNotificationChannel()
         ContextCompat.registerReceiver(this, usbDetachReceiver,
             IntentFilter(UsbManager.ACTION_USB_DEVICE_DETACHED), ContextCompat.RECEIVER_NOT_EXPORTED)
