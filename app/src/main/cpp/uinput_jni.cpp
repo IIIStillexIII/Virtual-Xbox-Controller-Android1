@@ -624,8 +624,14 @@ static void evdev_reader_thread_func() {
         struct input_absinfo abs_rz{};
         struct input_absinfo abs_brake{};
         struct input_absinfo abs_gas{};
+        bool has_x{false};
+        bool has_y{false};
         bool has_rx{false};
         bool has_ry{false};
+        bool has_z{false};
+        bool has_rz{false};
+        bool has_brake{false};
+        bool has_gas{false};
         uint32_t buttons{0};
     };
 
@@ -791,8 +797,17 @@ static void evdev_reader_thread_func() {
             dev.name = name_str;
 
             // Reuse the axis capability bitmap collected above.
-            dev.has_rx = (abs_bitmask[ABS_RX / 8] & (1 << (ABS_RX % 8))) != 0;
-            dev.has_ry = (abs_bitmask[ABS_RY / 8] & (1 << (ABS_RY % 8))) != 0;
+            auto has_abs_cap = [&](int code) {
+                return (abs_bitmask[code / 8] & (1 << (code % 8))) != 0;
+            };
+            dev.has_x = has_abs_cap(ABS_X);
+            dev.has_y = has_abs_cap(ABS_Y);
+            dev.has_rx = has_abs_cap(ABS_RX);
+            dev.has_ry = has_abs_cap(ABS_RY);
+            dev.has_z = has_abs_cap(ABS_Z);
+            dev.has_rz = has_abs_cap(ABS_RZ);
+            dev.has_brake = has_abs_cap(ABS_BRAKE);
+            dev.has_gas = has_abs_cap(ABS_GAS);
 
             if (ioctl(fd, EVIOCGABS(ABS_X), &dev.abs_x) < 0) dev.abs_x = {0, -32768, 32767, 0, 0, 0};
             if (ioctl(fd, EVIOCGABS(ABS_Y), &dev.abs_y) < 0) dev.abs_y = {0, -32768, 32767, 0, 0, 0};
@@ -864,8 +879,20 @@ static void evdev_reader_thread_func() {
                         // the virtual controller until another physical event arrives.
                         open_fds[i].buttons = 0;
                         recompute_buttons();
-                        cur_lx = cur_ly = cur_rx = cur_ry = 0;
-                        cur_lt = cur_rt = 0;
+                        if (open_fds[i].has_x) cur_lx = 0;
+                                            if (open_fds[i].has_y) cur_ly = 0;
+                                            if (open_fds[i].has_rx) cur_rx = 0;
+                                            if (open_fds[i].has_ry) cur_ry = 0;
+                                            if (open_fds[i].has_z) {
+                                                if (open_fds[i].has_rx) cur_lt = 0;
+                                                else cur_rx = 0;
+                                            }
+                                            if (open_fds[i].has_rz) {
+                                                if (open_fds[i].has_ry) cur_rt = 0;
+                                                else cur_ry = 0;
+                                            }
+                                            if (open_fds[i].has_brake) cur_lt = 0;
+                                            if (open_fds[i].has_gas) cur_rt = 0;
                         state_changed = true;
                     }
                     continue;
@@ -881,8 +908,20 @@ static void evdev_reader_thread_func() {
                     // Release the virtual state on EOF/error just as on poll HUP.
                     open_fds[i].buttons = 0;
                     recompute_buttons();
-                    cur_lx = cur_ly = cur_rx = cur_ry = 0;
-                    cur_lt = cur_rt = 0;
+                    if (open_fds[i].has_x) cur_lx = 0;
+                                        if (open_fds[i].has_y) cur_ly = 0;
+                                        if (open_fds[i].has_rx) cur_rx = 0;
+                                        if (open_fds[i].has_ry) cur_ry = 0;
+                                        if (open_fds[i].has_z) {
+                                            if (open_fds[i].has_rx) cur_lt = 0;
+                                            else cur_rx = 0;
+                                        }
+                                        if (open_fds[i].has_rz) {
+                                            if (open_fds[i].has_ry) cur_rt = 0;
+                                            else cur_ry = 0;
+                                        }
+                                        if (open_fds[i].has_brake) cur_lt = 0;
+                                        if (open_fds[i].has_gas) cur_rt = 0;
                     state_changed = true;
                     continue;
                 }
