@@ -1007,6 +1007,13 @@ static void evdev_reader_thread_func() {
     }
     open_fds.clear();
 
+    // Stopping the reader must release every virtual input even when the
+    // physical controller disappears or the service stops while a control is held.
+    cur_buttons = 0;
+    cur_lx = cur_ly = cur_rx = cur_ry = 0;
+    cur_lt = cur_rt = 0;
+    send_report();
+
     g_jvm->DetachCurrentThread();
 }
 
