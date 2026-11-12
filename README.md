@@ -20,7 +20,7 @@ The original Virtual Xbox Controller is the project's foundation and must remain
 
 Use other projects such as [GPad2Xbox](https://github.com/ZHStore19/GPad2Xbox) only as technical references for specific ideas where useful. They are not a replacement foundation, and their architecture or implementation must not be copied wholesale. Prefer small, targeted changes that integrate with the original Virtual Xbox Controller architecture and preserve its existing UI, Desktop mode, services, and working features.
 
-Every change should have a clear reason, a narrowly defined scope, and a compatibility check against existing behavior. Preserve the two intended virtual gamepad profiles — Xbox Series X|S and PS5 DualSense — and do not introduce additional gamepad profiles unless the project goal is explicitly changed.
+Every change should have a clear reason, a narrowly defined scope, and a compatibility check against existing behavior. Preserve the two intended virtual gamepad profiles — Xbox Series X|S and PS5 DualSense — and do not introduce additional gamepad profiles unless the project goal is explicitly changed. The mandatory review and no-duplication policy is documented in [Development Rules](docs/DEVELOPMENT_RULES.md).
 
 A key target for compatibility testing is **Call of Duty: Mobile (CODM)**, alongside other Android games with controller support. The objective is genuine system-level input-device recognition, **not** an on-screen overlay or touch-control/macro mapping. CODM compatibility is a target to verify on real devices; it is not claimed as guaranteed, and this project does not attempt to bypass a game's anti-cheat or controller restrictions.
 
