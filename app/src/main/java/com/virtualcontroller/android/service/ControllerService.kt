@@ -707,8 +707,9 @@ class ControllerService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val nextLabel = if (mode == InjectionMode.UINPUT) {
-            val profiles = com.virtualcontroller.android.uinput.GamepadProfile.values()
-            val next = profiles[(profile.ordinal + 1) % profiles.size]
+            val profiles = com.virtualcontroller.android.uinput.GamepadProfile.values().filter { !it.isMouseMode }
+            val currentIndex = profiles.indexOfFirst { it.id == profile.id }.coerceAtLeast(0)
+            val next = profiles[(currentIndex + 1) % profiles.size]
             "→ ${next.displayName}"
         } else {
             "Switch profile"
