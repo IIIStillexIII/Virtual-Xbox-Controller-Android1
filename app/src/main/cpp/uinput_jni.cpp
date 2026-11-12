@@ -562,6 +562,7 @@ static std::string g_target_device_filter = "ANY";
 static int g_target_vendor = -1;
 static int g_target_product = -1;
 static bool g_target_bluetooth_only = false;
+static bool g_target_usb_only = false;
 
 JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void*) {
     g_jvm = vm;
@@ -971,7 +972,8 @@ static void evdev_reader_thread_func() {
 
             struct input_id inputId{};
             if (ioctl(fd, EVIOCGID, &inputId) < 0 ||
-                (g_target_bluetooth_only && inputId.bustype != BUS_BLUETOOTH)) {
+                (g_target_bluetooth_only && inputId.bustype != BUS_BLUETOOTH) ||
+                (g_target_usb_only && inputId.bustype != BUS_USB)) {
                 close(fd);
                 continue;
             }
@@ -1015,10 +1017,26 @@ static void evdev_reader_thread_func() {
             auto has_abs_code = [&](int code) {
                 return (abs_bitmask[code / 8] & (1 << (code % 8))) != 0;
             };
+            // Include the common legacy joystick button range too. The event
+            // mapper below already understands these BTN_TRIGGER/BTN_THUMB/etc.
+            // codes; omitting them here caused some older generic pads to be
+            // rejected before their supported button events could be read.
             const bool has_gamepad_button =
                 has_key_code(BTN_SOUTH) || has_key_code(BTN_EAST) ||
                 has_key_code(BTN_NORTH) || has_key_code(BTN_WEST) ||
-                has_key_code(BTN_GAMEPAD) || has_key_code(BTN_JOYSTICK);
+                has_key_code(BTN_GAMEPAD) || has_key_code(BTN_JOYSTICK) ||
+                has_key_code(BTN_TRIGGER) || has_key_code(BTN_THUMB) ||
+                has_key_code(BTN_THUMB2) || has_key_code(BTN_TOP) ||
+                has_key_code(BTN_C) || has_key_code(BTN_Z) ||
+                has_key_code(BTN_TOP2) || has_key_code(BTN_PINKIE) ||
+                has_key_code(BTN_BASE) || has_key_code(BTN_BASE2) ||
+                has_key_code(BTN_BASE3) || has_key_code(BTN_BASE4) ||
+                has_key_code(BTN_BASE5) || has_key_code(BTN_BASE6) ||
+                has_key_code(BTN_SELECT) || has_key_code(BTN_START) ||
+                has_key_code(BTN_MODE) || has_key_code(BTN_TL) ||
+                has_key_code(BTN_TR) || has_key_code(BTN_TL2) ||
+                has_key_code(BTN_TR2) || has_key_code(BTN_THUMBL) ||
+                has_key_code(BTN_THUMBR);
             const bool has_stick_pair =
                 has_abs_code(ABS_X) && has_abs_code(ABS_Y);
             int selected_hat_x = -1;
@@ -1032,10 +1050,14 @@ static void evdev_reader_thread_func() {
                     break;
                 }
             }
-            const bool has_secondary_stick =
+            // This is only a candidate-device heuristic, not an axis mapping:
+            // some gamepads expose non-standard button codes but have a primary
+            // stick plus a hat D-pad. Keep those devices discoverable without
+            // treating the hat axes as a second analog stick.
+            const bool has_joystick_layout =
                 (has_abs_code(ABS_RX) && has_abs_code(ABS_RY)) ||
                 (selected_hat_x >= 0 && selected_hat_y >= 0);
-            if (!has_gamepad_button && !(has_stick_pair && has_secondary_stick)) {
+            if (!has_gamepad_button && !(has_stick_pair && has_joystick_layout)) {
                 close(fd);
                 continue;
             }
@@ -1048,8 +1070,9 @@ static void evdev_reader_thread_func() {
                 }
             } else if (g_target_device_filter != "ANY" && !g_target_device_filter.empty()) {
                 bool match_uniq = !uniq_str.empty() && contains_ic(uniq_str, g_target_device_filter);
+                bool match_phys = !phys_str.empty() && contains_ic(phys_str, g_target_device_filter);
                 bool match_name = !name_str.empty() && contains_ic(name_str, g_target_device_filter);
-                if (!match_uniq && !match_name) {
+                if (!match_uniq && !match_phys && !match_name) {
                     close(fd);
                     continue;
                 }
@@ -1431,6 +1454,7 @@ Java_com_virtualcontroller_android_uinput_UInputNative_startEvdevReader(
     g_target_vendor = -1;
     g_target_product = -1;
     g_target_bluetooth_only = false;
+    g_target_usb_only = false;
     if (deviceFilter) {
         const char* str = env->GetStringUTFChars(deviceFilter, nullptr);
         g_target_device_filter = str ? str : "ANY";
@@ -1457,6 +1481,7 @@ Java_com_virtualcontroller_android_uinput_UInputNative_startEvdevReader(
         if (sscanf(g_target_device_filter.c_str(), "VIDPID:%x:%x", &vendor, &product) == 2) {
             g_target_vendor = (int)vendor;
             g_target_product = (int)product;
+            g_target_usb_only = true;
             g_target_device_filter = "";
         }
     }
