@@ -705,6 +705,16 @@ static void evdev_reader_thread_func() {
         bool has_rz{false};
         bool has_brake{false};
         bool has_gas{false};
+        // Some controllers advertise RX/RY but actually report the right stick
+        // on Z/RZ. Resolve this only after observing the axis return to rest.
+        bool z_ambiguous{false};
+        bool rz_ambiguous{false};
+        bool z_is_stick{false};
+        bool rz_is_stick{false};
+        bool rx_seen{false};
+        bool ry_seen{false};
+        uint64_t z_last_event_ms{0};
+        uint64_t rz_last_event_ms{0};
         uint32_t buttons{0};
         int32_t axis_values[6]{};
         uint64_t axis_order[6]{};
@@ -1108,6 +1118,12 @@ static void evdev_reader_thread_func() {
             ioctl(fd, EVIOCGABS(ABS_BRAKE), &dev.abs_brake);
             ioctl(fd, EVIOCGABS(ABS_GAS), &dev.abs_gas);
 
+            // If RX/RY are advertised, the legacy Z/RZ axes are ambiguous:
+            // they may be triggers, or a right stick on older DInput layouts.
+            // ABS_BRAKE/ABS_GAS are explicit trigger usages and are not ambiguous.
+            dev.z_ambiguous = dev.has_z && dev.has_rx && !dev.has_brake;
+            dev.rz_ambiguous = dev.has_rz && dev.has_ry && !dev.has_gas;
+
             LOGI("evdev_reader opened: %s name=\"%s\" phys=\"%s\" uniq=\"%s\" "
                  "bus=%04x vid=%04x pid=%04x ver=%04x keys=%d sticks=%d%d%d%d "
                  "triggers=%d%d%d%d hats=%d%d fd=%d",
@@ -1319,17 +1335,20 @@ static void evdev_reader_thread_func() {
                                 break;
                             }
                             case ABS_RX:
+                                dev.rx_seen = true;
                                 set_axis(dev, 2, scale_axis(ev.value, dev.abs_rx.minimum, dev.abs_rx.maximum, -32767, 32767));
                                 state_changed = true;
                                 break;
                             case ABS_RY: {
+                                dev.ry_seen = true;
                                 int32_t s = scale_axis(ev.value, dev.abs_ry.minimum, dev.abs_ry.maximum, -32767, 32767);
                                 set_axis(dev, 3, -s);
                                 state_changed = true;
                                 break;
                             }
                             case ABS_Z:
-                                if (!dev.has_rx) {
+                                if (dev.z_ambiguous) dev.z_last_event_ms = now_ms;
+                                if (!dev.has_rx || dev.z_is_stick) {
                                     set_axis(dev, 2, scale_axis(ev.value, dev.abs_z.minimum, dev.abs_z.maximum, -32767, 32767));
                                 } else {
                                     const int32_t trigger = scale_axis(ev.value, dev.abs_z.minimum, dev.abs_z.maximum, 0, 32767);
@@ -1339,7 +1358,8 @@ static void evdev_reader_thread_func() {
                                 state_changed = true;
                                 break;
                             case ABS_RZ:
-                                if (!dev.has_ry) {
+                                if (dev.rz_ambiguous) dev.rz_last_event_ms = now_ms;
+                                if (!dev.has_ry || dev.rz_is_stick) {
                                     int32_t s = scale_axis(ev.value, dev.abs_rz.minimum, dev.abs_rz.maximum, -32767, 32767);
                                     set_axis(dev, 3, -s);
                                 } else {
@@ -1385,6 +1405,72 @@ static void evdev_reader_thread_func() {
                         } // switch ev.code
                     } // else if EV_ABS
                 } // for k
+
+                // GamepadFusion-inspired heuristic: after Z/RZ becomes quiet,
+                // inspect its parked value. Triggers rest near minimum; legacy
+                // right-stick axes rest near the middle. If the corresponding
+                // RX/RY has emitted real events, retain the trigger interpretation.
+                auto classify_ambiguous_axis = [&](bool& ambiguous, bool& is_stick,
+                                                   bool other_axis_seen, int code,
+                                                   const struct input_absinfo& fallback,
+                                                   uint64_t last_event_ms,
+                                                   int stick_axis, int trigger_axis,
+                                                   uint32_t trigger_button_mask) {
+                    if (!ambiguous || last_event_ms == 0 || now_ms < last_event_ms ||
+                        now_ms - last_event_ms < 1000 || dev.fd < 0) return;
+                    struct input_absinfo current{};
+                    if (ioctl(dev.fd, EVIOCGABS(code), &current) < 0) {
+                        ambiguous = false;
+                        LOGW("evdev_reader: cannot inspect ambiguous ABS_%s; keeping trigger mapping",
+                             code == ABS_Z ? "Z" : "RZ");
+                        return;
+                    }
+                    const int64_t span = static_cast<int64_t>(current.maximum) - current.minimum;
+                    if (span < 8) {
+                        ambiguous = false;
+                        LOGW("evdev_reader: invalid range for ambiguous ABS_%s; keeping trigger mapping",
+                             code == ABS_Z ? "Z" : "RZ");
+                        return;
+                    }
+                    const int64_t parked = current.value;
+                    const int64_t low_band = static_cast<int64_t>(current.minimum) + span / 8;
+                    const int64_t middle_band = static_cast<int64_t>(current.minimum) + (span * 3) / 8;
+                    if (parked <= low_band) {
+                        ambiguous = false;
+                        LOGI("evdev_reader: ABS_%s rests at minimum; confirmed trigger",
+                             code == ABS_Z ? "Z" : "RZ");
+                        return;
+                    }
+                    if (parked >= middle_band) {
+                        ambiguous = false;
+                        if (other_axis_seen) {
+                            LOGI("evdev_reader: ABS_%s rests mid-range but paired RX/RY is active; keeping trigger",
+                                 code == ABS_Z ? "Z" : "RZ");
+                            return;
+                        }
+                        is_stick = true;
+                        dev.buttons &= ~trigger_button_mask;
+                        set_axis(dev, trigger_axis, 0);
+                        const int32_t stick_value = scale_axis(
+                            current.value, current.minimum, current.maximum, -32767, 32767);
+                        set_axis(dev, stick_axis, code == ABS_RZ ? -stick_value : stick_value);
+                        state_changed = true;
+                        LOGI("evdev_reader: ABS_%s rests mid-range and RX/RY is silent; rerouted to right stick",
+                             code == ABS_Z ? "Z" : "RZ");
+                        return;
+                    }
+                    // The resting point is unusual; leave the current mapping alone
+                    // and retry after another quiet interval rather than guessing.
+                    if (code == ABS_Z) dev.z_last_event_ms = now_ms;
+                    else dev.rz_last_event_ms = now_ms;
+                    (void)fallback;
+                };
+
+                classify_ambiguous_axis(dev.z_ambiguous, dev.z_is_stick, dev.rx_seen,
+                                        ABS_Z, dev.abs_z, dev.z_last_event_ms, 2, 4, 0x08000000);
+                classify_ambiguous_axis(dev.rz_ambiguous, dev.rz_is_stick, dev.ry_seen,
+                                        ABS_RZ, dev.abs_rz, dev.rz_last_event_ms, 3, 5, 0x00800000);
+
                 recompute_buttons();
                 recompute_axes();
             } // for i
