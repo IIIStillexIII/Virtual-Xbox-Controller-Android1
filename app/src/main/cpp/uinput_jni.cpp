@@ -20,6 +20,7 @@
 #include <string>
 #include <algorithm>
 #include <poll.h>
+#include <sys/inotify.h>
 
 #define LOG_TAG "uinput_jni"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
@@ -858,6 +859,22 @@ static void evdev_reader_thread_func() {
         closedir(dir);
     };
 
+    // Event-driven hotplug detection with periodic rescans as a fallback.
+    int hotplug_fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+    int hotplug_watch = -1;
+    if (hotplug_fd >= 0) {
+        hotplug_watch = inotify_add_watch(
+            hotplug_fd, "/dev/input",
+            IN_CREATE | IN_DELETE | IN_MOVED_TO | IN_MOVED_FROM | IN_Q_OVERFLOW);
+        if (hotplug_watch < 0) {
+            LOGE("evdev_reader: inotify_add_watch failed: %s", strerror(errno));
+            close(hotplug_fd);
+            hotplug_fd = -1;
+        }
+    } else {
+        LOGI("evdev_reader: inotify unavailable, using periodic device scan: %s", strerror(errno));
+    }
+
     rescan_devices();
 
     uint64_t last_rescan_ms = 0;
@@ -868,28 +885,60 @@ static void evdev_reader_thread_func() {
         clock_gettime(CLOCK_MONOTONIC, &ts);
         uint64_t now_ms = (uint64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 
-        if (open_fds.empty() || (now_ms - last_rescan_ms) > 2000) {
+        if ((hotplug_fd < 0 && open_fds.empty()) || (now_ms - last_rescan_ms) > 2000) {
             rescan_devices();
             last_rescan_ms = now_ms;
         }
 
-        if (open_fds.empty()) {
+        if (open_fds.empty() && hotplug_fd < 0) {
             struct timespec req = {0, 100 * 1000 * 1000};
             nanosleep(&req, nullptr);
             continue;
         }
 
         std::vector<struct pollfd> pfds;
+        if (hotplug_fd >= 0) {
+            struct pollfd pfd{};
+            pfd.fd = hotplug_fd;
+            pfd.events = POLLIN;
+            pfds.push_back(pfd);
+        }
         for (const auto& dev : open_fds) {
-            struct pollfd pfd;
+            struct pollfd pfd{};
             pfd.fd = dev.fd;
             pfd.events = POLLIN;
-            pfd.revents = 0;
             pfds.push_back(pfd);
         }
 
-        int poll_res = poll(pfds.data(), (nfds_t)pfds.size(), 10);
+        int poll_res = poll(pfds.data(), (nfds_t)pfds.size(), 100);
         bool state_changed = false;
+        const size_t device_offset = hotplug_fd >= 0 ? 1 : 0;
+        if (poll_res > 0 && hotplug_fd >= 0 && (pfds[0].revents & POLLIN)) {
+            alignas(inotify_event) char event_buffer[4096];
+            bool should_rescan = false;
+            for (;;) {
+                const ssize_t bytes = read(hotplug_fd, event_buffer, sizeof(event_buffer));
+                if (bytes < 0 && errno == EINTR) continue;
+                if (bytes < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) break;
+                if (bytes <= 0) break;
+
+                size_t offset = 0;
+                while (offset + sizeof(inotify_event) <= static_cast<size_t>(bytes)) {
+                    const auto* event = reinterpret_cast<const inotify_event*>(event_buffer + offset);
+                    const size_t event_size = sizeof(inotify_event) + event->len;
+                    if (event_size > static_cast<size_t>(bytes) - offset) break;
+                    if ((event->mask & IN_Q_OVERFLOW) ||
+                        (event->len > 0 && strncmp(event->name, "event", 5) == 0)) {
+                        should_rescan = true;
+                    }
+                    offset += event_size;
+                }
+            }
+            if (should_rescan) {
+                rescan_devices();
+                last_rescan_ms = now_ms;
+            }
+        }
 
         if (poll_res < 0) {
             if (errno == EINTR) continue;
@@ -902,9 +951,10 @@ static void evdev_reader_thread_func() {
         }
 
         if (poll_res > 0) {
-            for (size_t i = 0; i < pfds.size(); i++) {
-                if (!(pfds[i].revents & POLLIN)) {
-                    if (pfds[i].revents & (POLLERR | POLLHUP | POLLNVAL)) {
+            for (size_t i = 0; i < open_fds.size(); i++) {
+                const size_t poll_index = i + device_offset;
+                if (!(pfds[poll_index].revents & POLLIN)) {
+                    if (pfds[poll_index].revents & (POLLERR | POLLHUP | POLLNVAL)) {
                         ioctl(open_fds[i].fd, EVIOCGRAB, 0);
                         close(open_fds[i].fd);
                         open_fds[i].fd = -1;
@@ -1084,6 +1134,11 @@ static void evdev_reader_thread_func() {
         }
     }
     open_fds.clear();
+
+    if (hotplug_fd >= 0) {
+        if (hotplug_watch >= 0) inotify_rm_watch(hotplug_fd, hotplug_watch);
+        close(hotplug_fd);
+    }
 
     // Stopping the reader must release every virtual input even when the
     // physical controller disappears or the service stops while a control is held.
