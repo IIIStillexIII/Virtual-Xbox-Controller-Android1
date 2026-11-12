@@ -783,6 +783,7 @@ static void evdev_reader_thread_func() {
                     } else {
                         int32_t trigger = scale_axis(value, info.minimum, info.maximum, 0, 32767);
                         set_axis(dev, 4, trigger);
+                        dev.buttons &= ~0x08000000;
                         if (trigger > 16384) dev.buttons |= 0x08000000;
                     }
                     break;
@@ -793,26 +794,31 @@ static void evdev_reader_thread_func() {
                     } else {
                         int32_t trigger = scale_axis(value, info.minimum, info.maximum, 0, 32767);
                         set_axis(dev, 5, trigger);
+                        dev.buttons &= ~0x00800000;
                         if (trigger > 16384) dev.buttons |= 0x00800000;
                     }
                     break;
                 case ABS_BRAKE: {
                     int32_t trigger = scale_axis(value, info.minimum, info.maximum, 0, 32767);
                     set_axis(dev, 4, trigger);
+                    dev.buttons &= ~0x08000000;
                     if (trigger > 16384) dev.buttons |= 0x08000000;
                     break;
                 }
                 case ABS_GAS: {
                     int32_t trigger = scale_axis(value, info.minimum, info.maximum, 0, 32767);
                     set_axis(dev, 5, trigger);
+                    dev.buttons &= ~0x00800000;
                     if (trigger > 16384) dev.buttons |= 0x00800000;
                     break;
                 }
                 case ABS_HAT0X:
+                    dev.buttons &= ~(0x00001000 | 0x00000800);
                     if (value < 0) dev.buttons |= 0x00001000;
                     else if (value > 0) dev.buttons |= 0x00000800;
                     break;
                 case ABS_HAT0Y:
+                    dev.buttons &= ~(0x00002000 | 0x00000400);
                     if (value < 0) dev.buttons |= 0x00002000;
                     else if (value > 0) dev.buttons |= 0x00000400;
                     break;
