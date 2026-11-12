@@ -610,6 +610,39 @@ static bool contains_ic(const std::string& haystack, const std::string& needle) 
     return it_raw != haystack.end();
 }
 
+// Build a stable identity shared by the evdev interfaces of one physical pad.
+// EVIOCGPHYS commonly ends in /inputN; that suffix identifies an input interface,
+// not a separate physical controller, so remove it before comparing interfaces.
+static std::string physical_device_key(const std::string& phys,
+                                       const std::string& uniq,
+                                       const struct input_id& id,
+                                       const std::string& name) {
+    if (!phys.empty()) {
+        std::string key = phys;
+        const size_t input_pos = key.rfind("/input");
+        if (input_pos != std::string::npos && input_pos + 6 < key.size()) {
+            bool numeric_suffix = true;
+            for (size_t i = input_pos + 6; i < key.size(); ++i) {
+                if (!std::isdigit(static_cast<unsigned char>(key[i]))) {
+                    numeric_suffix = false;
+                    break;
+                }
+            }
+            if (numeric_suffix) key.erase(input_pos);
+        }
+        return "phys:" + key;
+    }
+    if (!uniq.empty()) return "uniq:" + uniq;
+
+    // Last-resort identity for drivers that expose neither phys nor uniq.
+    // This is less discriminating for two identical pads; the log makes that
+    // limitation visible rather than pretending VID/PID is a unique identity.
+    char fallback[64];
+    snprintf(fallback, sizeof(fallback), "id:%04x:%04x:%04x:",
+             id.bustype, id.vendor, id.product);
+    return std::string(fallback) + name;
+}
+
 static int32_t scale_axis(int32_t val, int32_t srcMin, int32_t srcMax, int32_t dstMin, int32_t dstMax) {
     if (srcMax <= srcMin) return dstMin;
     float norm = (float)(val - srcMin) / (float)(srcMax - srcMin);
@@ -679,6 +712,7 @@ static void evdev_reader_thread_func() {
     };
 
     std::vector<EvdevFd> open_fds;
+    std::string selected_device_key;
 
     uint64_t axis_sequence = 1;
     uint32_t cur_buttons = 0;
@@ -900,6 +934,9 @@ static void evdev_reader_thread_func() {
                 ++it;
             }
         }
+        // Once every interface of the selected physical controller is gone,
+        // allow the next connected controller to become the active source.
+        if (open_fds.empty()) selected_device_key.clear();
 
         DIR* dir = opendir("/dev/input");
         if (!dir) return;
@@ -1015,6 +1052,18 @@ static void evdev_reader_thread_func() {
                     close(fd);
                     continue;
                 }
+            }
+
+            const std::string device_key = physical_device_key(phys_str, uniq_str, inputId, name_str);
+            if (!selected_device_key.empty() && device_key != selected_device_key) {
+                close(fd);
+                continue;
+            }
+            if (selected_device_key.empty()) {
+                selected_device_key = device_key;
+                LOGI("evdev_reader selected physical controller: key=\"%s\" name=\"%s\" "
+                     "bus=%04x vid=%04x pid=%04x", selected_device_key.c_str(),
+                     name_str.c_str(), inputId.bustype, inputId.vendor, inputId.product);
             }
 
             if (ioctl(fd, EVIOCGRAB, 1) == 0) {
