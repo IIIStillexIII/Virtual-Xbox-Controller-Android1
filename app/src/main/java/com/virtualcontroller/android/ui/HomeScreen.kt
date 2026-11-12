@@ -184,13 +184,15 @@ private fun ConnectionSection(
 
 @Composable
 private fun ControlModeSection(profile: GamepadProfile, onProfile: (GamepadProfile) -> Unit) {
+    val context = LocalContext.current
+    val lastGamepadProfile = Prefs.getLastGamepadProfile(context)
     SectionTitle("Control mode")
     DividedCard(listOf(
         {
             ChoiceRow(
                 "Gamepad",
                 !profile.isMouseMode,
-                { if (profile.isMouseMode) onProfile(Prefs.getLastGamepadProfile(LocalContext.current)) },
+                { if (profile.isMouseMode) onProfile(lastGamepadProfile) },
                 subtitle = "Emulate a virtual controller"
             )
         },
