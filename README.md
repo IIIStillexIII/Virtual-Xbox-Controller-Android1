@@ -72,6 +72,7 @@ In particular, virtual-controller operation does not guarantee that every game â
 - **Injection backend:** The user must be able to choose either **Root** or **Shizuku** in the existing Settings interface. Root uses the existing root-based injection path; Shizuku uses the existing Shizuku path.
 - **Explicit selection:** Use only the backend the user selected. If it is unavailable or unauthorized, show a clear status and recovery guidance; do not silently switch to the other backend.
 - **Shared pipeline:** Backend selection changes only how the virtual input device is created/managed. Both backends must feed the same existing controller mapping and virtual-profile pipeline; do not fork or duplicate the mapping engine.
+- **Shizuku compatibility fallback:** If Shizuku cannot create a `uinput` device, the app may retain its existing `injectInputEvent` fallback. The UI/logs must identify this as legacy event injection, not as a system virtual gamepad; games may filter it.
 - **Permission and availability checks:** Check root availability or Shizuku connection/authorization before starting injection. Explain actionable recovery steps when access is missing.
 - **Persistence and status:** Remember the selected backend across app restarts and show the selected/active backend and its readiness in the existing UI.
 - **Hotplug and recovery:** The input pipeline monitors device changes and handles evdev synchronization loss.
