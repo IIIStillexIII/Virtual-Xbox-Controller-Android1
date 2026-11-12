@@ -473,17 +473,27 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
 
     fun startEvdevReader(listener: com.virtualcontroller.android.ipc.IInputEventListener, deviceFilter: String?) {
         try {
+            if (rootDeviceReady) {
+                val started = rootBackend.startEvdevReader(deviceFilter) { report ->
+                    try { listener.onInputFrame(report) } catch (t: Throwable) {
+                        Log.w(TAG, "Root evdev callback failed: " + t.message)
+                    }
+                }
+                if (started) return
+                Log.w(TAG, "Root evdev reader unavailable; trying Shizuku reader")
+            }
             service?.startEvdevReader(listener, deviceFilter)
         } catch (t: Throwable) {
-            Log.e(TAG, "startEvdevReader failed: ${t.message}")
+            Log.e(TAG, "startEvdevReader failed: " + t.message)
         }
     }
 
     fun stopEvdevReader() {
         try {
-            service?.stopEvdevReader()
+            if (rootDeviceReady) rootBackend.stopEvdevReader()
+            else service?.stopEvdevReader()
         } catch (t: Throwable) {
-            Log.e(TAG, "stopEvdevReader failed: ${t.message}")
+            Log.e(TAG, "stopEvdevReader failed: " + t.message)
         }
     }
 }
