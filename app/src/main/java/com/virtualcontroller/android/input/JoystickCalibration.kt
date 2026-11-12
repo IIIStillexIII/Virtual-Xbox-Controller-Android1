@@ -1,7 +1,6 @@
 package com.virtualcontroller.android.input
 
-import kotlin.math.abs
-import kotlin.math.sqrt
+import kotlin.math.hypot
 
 // Per-stick calibration applied to raw SC2026 Int16 values (-32768..32767)
 // before they go to uinput / GamepadMapper.
@@ -23,13 +22,19 @@ data class StickCalibration(
         // 3. Radial deadzone — if magnitude < deadzone, output zero;
         //    otherwise rescale so the deadzone edge becomes the new zero,
         //    keeping max deflection intact.
-        val dz = (32767.0 * deadzonePercent / 100.0)
-        if (dz > 0) {
-            val mag = sqrt((x * x + y * y).toDouble())
-            if (mag < dz) {
+        val percent = deadzonePercent.coerceIn(0, 100)
+        if (percent == 100) return 0 to 0
+
+        val deadzone = 32767.0 * percent / 100.0
+        if (deadzone > 0.0) {
+            // Convert before multiplication: Int x*x can overflow for offset or
+            // malformed calibration values before the result reaches sqrt().
+            val magnitude = hypot(x.toDouble(), y.toDouble())
+            if (magnitude <= deadzone || magnitude == 0.0) {
                 return 0 to 0
             }
-            val scale = (mag - dz) / (32767.0 - dz) * 32767.0 / mag
+
+            val scale = (magnitude - deadzone) / (32767.0 - deadzone) * 32767.0 / magnitude
             x = (x * scale).toInt()
             y = (y * scale).toInt()
         }
