@@ -3,6 +3,7 @@ package com.virtualcontroller.android.uinput
 import android.net.LocalServerSocket
 import android.net.LocalSocket
 import android.util.Log
+import com.virtualcontroller.android.ipc.IInputEventListener
 import java.io.DataInputStream
 import java.io.DataOutputStream
 
@@ -72,9 +73,8 @@ class RootUInputDaemon private constructor() {
             }
         }
 
-        private class RootFrameListener {
-            @Suppress("unused")
-            fun onInputFrame(report: ByteArray?) {
+        private class RootFrameListener : IInputEventListener.Stub() {
+            override fun onInputFrame(report: ByteArray?) {
                 if (report == null) return
                 try {
                     synchronized(this) {
