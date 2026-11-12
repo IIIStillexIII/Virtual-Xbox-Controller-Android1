@@ -364,11 +364,15 @@ class ControllerService : Service() {
         if (mode == InjectionMode.NONE) {
             // Keep a visible error after stopping instead of leaving a "Connecting…" notification.
             val selectedBackend = Prefs.getInjectionBackend(this)
+            val failureMessage = when (selectedBackend) {
+                InjectionBackend.ROOT -> getString(R.string.root_backend_unavailable)
+                InjectionBackend.SHIZUKU -> getString(R.string.shizuku_backend_unavailable)
+            }
             getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID_SHIZUKU,
                 Notification.Builder(this, CHANNEL_ID)
                     .setSmallIcon(android.R.drawable.stat_notify_error)
                     .setContentTitle(getString(R.string.notification_title))
-                    .setContentText(getString(R.string.injection_backend_unavailable, selectedBackend.displayName))
+                    .setContentText(failureMessage)
                     .setAutoCancel(true)
                     .build())
             stopSelf()
