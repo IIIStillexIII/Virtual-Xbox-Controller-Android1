@@ -2,6 +2,14 @@
 
 Android controller bridge that reads supported physical game controllers and exposes a system-wide virtual gamepad through Android's Linux input stack.
 
+This is **my development fork**, not the original repository. The original upstream project is [misakidebugged/Virtual-Xbox-Controller-Android](https://github.com/misakidebugged/Virtual-Xbox-Controller-Android); this repository is [IIIStillexIII/Virtual-Xbox-Controller-Android1](https://github.com/IIIStillexIII/Virtual-Xbox-Controller-Android1). The upstream project is kept as the reference/base, while changes are made in this fork.
+
+## Project goal
+
+The goal of this fork is to keep the original Virtual Xbox Controller app and its overall design as close to upstream as practical, while improving it into a reliable system-wide controller bridge for Android. A generic physical gamepad connected over USB or Bluetooth should be mapped to one of exactly two virtual controller profiles — **Xbox Series X|S** or **PlayStation 5 DualSense** — so Android and games that support those controller input paths can recognize and use it as a gamepad. The app must also retain **Desktop mode**, use the **root backend first** with **Shizuku as a fallback**, and provide complete practical mapping for buttons, sticks, triggers and D-pad.
+
+A key target for compatibility testing is **Call of Duty: Mobile (CODM)**, alongside other Android games with controller support. The objective is genuine system-level input-device recognition, **not** an on-screen overlay or touch-control/macro mapping. CODM compatibility is a target to verify on real devices; it is not claimed as guaranteed, and this project does not attempt to bypass a game's anti-cheat or controller restrictions.
+
 This is a specialized fork of the original Virtual Xbox Controller project. The current fork focuses on two virtual gamepad profiles:
 
 - **Xbox** — Xbox-style virtual controller profile.
