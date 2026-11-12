@@ -89,8 +89,10 @@ class MainActivity : ComponentActivity() {
                     device?.let { onDeviceAttached(it) }
                 }
                 UsbManager.ACTION_USB_DEVICE_DETACHED -> {
-                    stopControllerService()
-                    log("Controller disconnected")
+                    // ControllerService tracks the exact active USB device and stops itself
+                    // only when that device is removed. Unrelated USB unplug events must not
+                    // interrupt an active controller or Bluetooth session.
+                    log("USB device detached")
                 }
             }
         }
@@ -402,19 +404,30 @@ class MainActivity : ComponentActivity() {
         log("Service started (Bluetooth)")
     }
 
+    private fun isHidUsbDevice(device: UsbDevice): Boolean {
+        return (0 until device.interfaceCount).any { index ->
+            device.getInterface(index).interfaceClass == android.hardware.usb.UsbConstants.USB_CLASS_HID
+        }
+    }
+
     private fun checkAndRequestUsb() {
         val usbManager = getSystemService(USB_SERVICE) as UsbManager
+        // Keep Steam's vendor-specific transport preferred; other HID devices use evdev
+        // and do not need Android's UsbDeviceConnection permission.
         val device = usbManager.deviceList.values.firstOrNull {
             it.vendorId == UsbConnectionManager.STEAM_VID
-        }
+        } ?: usbManager.deviceList.values.firstOrNull(::isHidUsbDevice)
 
         if (device == null) {
-            log("No Steam Controller found — plug it in first")
-            Toast.makeText(this, "No Steam Controller detected", Toast.LENGTH_LONG).show()
+            log("No supported USB controller found")
+            Toast.makeText(this, "No USB HID controller detected", Toast.LENGTH_LONG).show()
             return
         }
 
-        if (usbManager.hasPermission(device)) {
+        if (device.vendorId != UsbConnectionManager.STEAM_VID) {
+            log("Starting USB HID controller through evdev")
+            startControllerService(device)
+        } else if (usbManager.hasPermission(device)) {
             startControllerService(device)
         } else {
             val permIntent = PendingIntent.getBroadcast(
@@ -423,14 +436,20 @@ class MainActivity : ComponentActivity() {
                 PendingIntent.FLAG_IMMUTABLE
             )
             usbManager.requestPermission(device, permIntent)
-            log("Requesting USB permission...")
+            log("Requesting Steam Controller USB permission...")
         }
     }
 
     private fun onDeviceAttached(device: UsbDevice) {
-        if (device.vendorId != UsbConnectionManager.STEAM_VID) return
-        log("Steam Controller attached")
-        checkPermissionsAndStart()
+        if (device.vendorId == UsbConnectionManager.STEAM_VID) {
+            log("Steam Controller attached")
+            checkPermissionsAndStart()
+        } else if (isHidUsbDevice(device)) {
+            log("USB HID device attached: VID=0x${device.vendorId.toString(16)} PID=0x${device.productId.toString(16)}")
+            if (Prefs.getTransport(this) == Transport.USB && !serviceRunning) {
+                startControllerService(device)
+            }
+        }
     }
 
     private fun startControllerService(device: UsbDevice) {
