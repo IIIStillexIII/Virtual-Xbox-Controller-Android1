@@ -15,6 +15,7 @@ class RootUInputBackend(private val context: Context) {
     companion object {
         private const val TAG = "RootUInputBackend"
         private const val SOCKET_NAME = "virtual-controller-root-uinput"
+        private const val INPUT_SOCKET_NAME = "virtual-controller-root-input"
         private const val MAGIC = 0x56584331
         private const val OP_PING = 1
         private const val OP_CAN_OPEN = 2
@@ -23,6 +24,8 @@ class RootUInputBackend(private val context: Context) {
         private const val OP_SEND_MOUSE = 5
         private const val OP_POLL_FF = 6
         private const val OP_DESTROY = 7
+        private const val OP_START_EVDEV = 8
+        private const val OP_STOP_EVDEV = 9
 
         private fun shellQuote(value: String): String =
             "'" + value.replace("'", "'\\''") + "'"
@@ -32,6 +35,9 @@ class RootUInputBackend(private val context: Context) {
     private var socket: LocalSocket? = null
     private var input: DataInputStream? = null
     private var output: DataOutputStream? = null
+    private var inputSocket: LocalSocket? = null
+    @Volatile private var inputListener: ((ByteArray) -> Unit)? = null
+    @Volatile private var inputReaderRunning = false
 
     @Synchronized
     fun start(): Boolean {
@@ -85,7 +91,31 @@ class RootUInputBackend(private val context: Context) {
             socket = client
             input = dataIn
             output = dataOut
-            requestBoolean(OP_PING)
+            if (!requestBoolean(OP_PING)) return false
+            val inputClient = LocalSocket()
+            inputClient.connect(LocalSocketAddress(INPUT_SOCKET_NAME, LocalSocketAddress.Namespace.ABSTRACT), 1000)
+            val inputStream = DataInputStream(inputClient.inputStream)
+            if (inputStream.readInt() != MAGIC) {
+                inputClient.close()
+                closeConnection()
+                return false
+            }
+            inputSocket = inputClient
+            inputReaderRunning = true
+            Thread({
+                try {
+                    while (inputReaderRunning) {
+                        val size = inputStream.readInt()
+                        if (size !in 1..256) break
+                        val report = ByteArray(size)
+                        inputStream.readFully(report)
+                        inputListener?.invoke(report)
+                    }
+                } catch (t: Throwable) {
+                    if (inputReaderRunning) Log.w(TAG, "Root evdev stream ended: " + t.message)
+                }
+            }, "root-evdev-input").apply { isDaemon = true; start() }
+            true
         } catch (t: Throwable) {
             Log.w(TAG, "Root backend start failed: ${t.message}")
             closeConnection()
@@ -163,6 +193,35 @@ class RootUInputBackend(private val context: Context) {
     }
 
     @Synchronized
+    fun startEvdevReader(deviceFilter: String?, listener: (ByteArray) -> Unit): Boolean {
+        return try {
+            inputListener = listener
+            val out = output ?: return false
+            val inp = input ?: return false
+            out.writeInt(OP_START_EVDEV)
+            out.writeUTF(deviceFilter ?: "ANY")
+            out.flush()
+            inp.readBoolean()
+        } catch (t: Throwable) {
+            Log.w(TAG, "startEvdevReader failed: " + t.message)
+            false
+        }
+    }
+
+    @Synchronized
+    fun stopEvdevReader() {
+        try {
+            val out = output ?: return
+            out.writeInt(OP_STOP_EVDEV)
+            out.flush()
+            input?.readBoolean()
+        } catch (t: Throwable) {
+            Log.w(TAG, "stopEvdevReader failed: " + t.message)
+        } finally {
+            inputListener = null
+        }
+    }
+    @Synchronized
     fun close() {
         try {
             output?.writeInt(OP_DESTROY)
@@ -186,6 +245,10 @@ class RootUInputBackend(private val context: Context) {
     }
 
     private fun closeConnection() {
+        inputReaderRunning = false
+        inputListener = null
+        try { inputSocket?.close() } catch (_: Throwable) {}
+        inputSocket = null
         try { socket?.close() } catch (_: Throwable) {}
         socket = null
         input = null
