@@ -14,6 +14,14 @@ This fork must remain based on the original **Virtual Xbox Controller for Androi
 
 My changes are intended to improve and extend the original application, not replace it. Development should build on the upstream code and its working systems through focused, compatible improvements. The fork must not turn into a separately designed or unrelated implementation, rewrite functioning subsystems without a demonstrated technical need, or remove existing functionality just to add the new controller profiles. New mapping and compatibility capabilities should be integrated into the original project structure while retaining its behavior, design, and identity. Any necessary architectural changes should be limited to the smallest practical scope and preserve existing features, including Desktop mode.
 
+### Development rule: improve the original, do not replace it
+
+The original Virtual Xbox Controller is the project's foundation and must remain the application we are improving. Before implementing a feature or changing a subsystem, compare the upstream implementation with this fork and verify what already exists and how it currently works. Do not rebuild, duplicate, or replace functionality that the original project already provides unless a concrete defect or limitation has been identified.
+
+Use other projects such as [GPad2Xbox](https://github.com/ZHStore19/GPad2Xbox) only as technical references for specific ideas where useful. They are not a replacement foundation, and their architecture or implementation must not be copied wholesale. Prefer small, targeted changes that integrate with the original Virtual Xbox Controller architecture and preserve its existing UI, Desktop mode, services, and working features.
+
+Every change should have a clear reason, a narrowly defined scope, and a compatibility check against existing behavior. Preserve the two intended virtual gamepad profiles — Xbox Series X|S and PS5 DualSense — and do not introduce additional gamepad profiles unless the project goal is explicitly changed.
+
 A key target for compatibility testing is **Call of Duty: Mobile (CODM)**, alongside other Android games with controller support. The objective is genuine system-level input-device recognition, **not** an on-screen overlay or touch-control/macro mapping. CODM compatibility is a target to verify on real devices; it is not claimed as guaranteed, and this project does not attempt to bypass a game's anti-cheat or controller restrictions.
 
 This is a specialized fork of the original Virtual Xbox Controller project. The current fork focuses on two virtual gamepad profiles:
