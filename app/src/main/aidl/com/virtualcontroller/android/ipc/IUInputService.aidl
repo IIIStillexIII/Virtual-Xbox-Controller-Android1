@@ -39,7 +39,7 @@ interface IUInputService {
 
     void destroy();
 
-    void startEvdevReader(IInputEventListener listener, String deviceAddressOrName);
+    boolean startEvdevReader(IInputEventListener listener, String deviceAddressOrName);
 
     void stopEvdevReader();
 }
