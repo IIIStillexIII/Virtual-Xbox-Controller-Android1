@@ -79,13 +79,15 @@ class ControllerService : Service() {
     private var reader: HidReportReader? = null
     private var heartbeatJob: Job? = null
     private var initialized = false
+    // USB evdev devices do not pass through UsbConnectionManager (Steam-only path).
+    private var activeEvdevUsbDevice: UsbDevice? = null
 
     // The service, not MainActivity, has to notice the unplug: with auto-launch the
     // activity is long gone by then.
     private val usbDetachReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val dev: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
-            if (dev != null && dev == usbManager.device) {
+            if (dev != null && (dev == usbManager.device || dev == activeEvdevUsbDevice)) {
                 Log.i(TAG, "Controller unplugged, stopping")
                 stopSelf()
             }
@@ -396,6 +398,7 @@ class ControllerService : Service() {
         if (dev.vendorId != UsbConnectionManager.STEAM_VID) {
             val filter = "VIDPID:${dev.vendorId.toString(16)}:${dev.productId.toString(16)}"
             Log.i(TAG, "Starting USB gamepad evdev reader: filter=$filter")
+            activeEvdevUsbDevice = dev
             uinput.startEvdevReader(inputEventListener, filter)
             return true
         }
@@ -661,6 +664,7 @@ class ControllerService : Service() {
 
     override fun onDestroy() {
         unregisterReceiver(usbDetachReceiver)
+        activeEvdevUsbDevice = null
         try { uinput.stopEvdevReader() } catch (_: Throwable) {}
         try { uinput.unbind() } catch (_: Throwable) {}
         scope.cancel()
