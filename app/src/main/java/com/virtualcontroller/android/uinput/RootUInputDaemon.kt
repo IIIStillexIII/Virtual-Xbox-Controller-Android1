@@ -91,7 +91,7 @@ class RootUInputDaemon private constructor() {
                                     output.writeInt(-1)
                                 } else {
                                     output.writeInt(event.size)
-                                    event.forEach(output::writeInt)
+                                    event.forEach { output.writeInt(it) }
                                 }
                                 output.flush()
                             }
