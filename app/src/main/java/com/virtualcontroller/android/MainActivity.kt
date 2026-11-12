@@ -182,6 +182,25 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // An early backend failure can happen before modeFlow ever leaves NONE.
+        // Unlock the UI selector again so the user can switch Root/Shizuku and retry.
+        var observedStartFailures = ControllerService.startFailureCount.value
+        lifecycleScope.launch {
+            ControllerService.startFailureCount.collect { count ->
+                if (count > observedStartFailures) {
+                    observedStartFailures = count
+                    serviceRunning = false
+                    hasSeenActiveMode = false
+                    log("Selected injection backend failed to start; Settings is available for recovery")
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Selected backend could not start. Check the notification for details.",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
+            }
+        }
+
         // Observe profile changes — e.g. when the user cycles via the notification action.
         // We need a dedicated flow because modeFlow doesn't re-emit when the profile changes within UINPUT.
         lifecycleScope.launch {
