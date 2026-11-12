@@ -626,6 +626,7 @@ static void evdev_reader_thread_func() {
         struct input_absinfo abs_gas{};
         bool has_rx{false};
         bool has_ry{false};
+        uint32_t buttons{0};
     };
 
     std::vector<EvdevFd> open_fds;
@@ -665,6 +666,14 @@ static void evdev_reader_thread_func() {
             env->CallVoidMethod(g_listener_ref, onFrameMethod, jarr);
             env->DeleteLocalRef(jarr);
         }
+    };
+
+    auto recompute_buttons = [&]() {
+        uint32_t combined = 0;
+        for (const auto& dev : open_fds) {
+            if (dev.fd >= 0) combined |= dev.buttons;
+        }
+        cur_buttons = combined;
     };
 
     auto rescan_devices = [&]() {
@@ -853,7 +862,8 @@ static void evdev_reader_thread_func() {
                         open_fds[i].fd = -1;
                         // A removed source must not leave buttons or sticks held on
                         // the virtual controller until another physical event arrives.
-                        cur_buttons = 0;
+                        open_fds[i].buttons = 0;
+                        recompute_buttons();
                         cur_lx = cur_ly = cur_rx = cur_ry = 0;
                         cur_lt = cur_rt = 0;
                         state_changed = true;
@@ -869,7 +879,8 @@ static void evdev_reader_thread_func() {
                     close(open_fds[i].fd);
                     open_fds[i].fd = -1;
                     // Release the virtual state on EOF/error just as on poll HUP.
-                    cur_buttons = 0;
+                    open_fds[i].buttons = 0;
+                    recompute_buttons();
                     cur_lx = cur_ly = cur_rx = cur_ry = 0;
                     cur_lt = cur_rt = 0;
                     state_changed = true;
@@ -906,8 +917,8 @@ static void evdev_reader_thread_func() {
                         }
 
                         if (mask != 0) {
-                            if (ev.value) cur_buttons |= mask;
-                            else cur_buttons &= ~mask;
+                            if (ev.value) dev.buttons |= mask;
+                            else dev.buttons &= ~mask;
                             state_changed = true;
                         }
                     } else if (ev.type == EV_ABS) {
@@ -937,7 +948,7 @@ static void evdev_reader_thread_func() {
                                     cur_rx = (int16_t)scale_axis(ev.value, dev.abs_z.minimum, dev.abs_z.maximum, -32767, 32767);
                                 } else {
                                     cur_lt = (uint16_t)scale_axis(ev.value, dev.abs_z.minimum, dev.abs_z.maximum, 0, 32767);
-                                    if (cur_lt > 16384) cur_buttons |= 0x08000000; else cur_buttons &= ~0x08000000;
+                                    if (cur_lt > 16384) dev.buttons |= 0x08000000; else dev.buttons &= ~0x08000000;
                                 }
                                 state_changed = true;
                                 break;
@@ -947,41 +958,41 @@ static void evdev_reader_thread_func() {
                                     cur_ry = (int16_t)(-s);
                                 } else {
                                     cur_rt = (uint16_t)scale_axis(ev.value, dev.abs_rz.minimum, dev.abs_rz.maximum, 0, 32767);
-                                    if (cur_rt > 16384) cur_buttons |= 0x00800000; else cur_buttons &= ~0x00800000;
+                                    if (cur_rt > 16384) dev.buttons |= 0x00800000; else dev.buttons &= ~0x00800000;
                                 }
                                 state_changed = true;
                                 break;
                             case ABS_BRAKE:
                                 cur_lt = (uint16_t)scale_axis(ev.value, dev.abs_brake.minimum, dev.abs_brake.maximum, 0, 32767);
-                                if (cur_lt > 16384) cur_buttons |= 0x08000000; else cur_buttons &= ~0x08000000;
+                                if (cur_lt > 16384) dev.buttons |= 0x08000000; else dev.buttons &= ~0x08000000;
                                 state_changed = true;
                                 break;
                             case ABS_GAS:
                                 cur_rt = (uint16_t)scale_axis(ev.value, dev.abs_gas.minimum, dev.abs_gas.maximum, 0, 32767);
-                                if (cur_rt > 16384) cur_buttons |= 0x00800000; else cur_buttons &= ~0x00800000;
+                                if (cur_rt > 16384) dev.buttons |= 0x00800000; else dev.buttons &= ~0x00800000;
                                 state_changed = true;
                                 break;
                             case ABS_HAT0X:
                                 if (ev.value < 0) {
-                                    cur_buttons |= 0x00001000;  // DPAD_LEFT
-                                    cur_buttons &= ~0x00000800; // DPAD_RIGHT
+                                    dev.buttons |= 0x00001000;  // DPAD_LEFT
+                                    dev.buttons &= ~0x00000800; // DPAD_RIGHT
                                 } else if (ev.value > 0) {
-                                    cur_buttons |= 0x00000800;  // DPAD_RIGHT
-                                    cur_buttons &= ~0x00001000; // DPAD_LEFT
+                                    dev.buttons |= 0x00000800;  // DPAD_RIGHT
+                                    dev.buttons &= ~0x00001000; // DPAD_LEFT
                                 } else {
-                                    cur_buttons &= ~(0x00001000 | 0x00000800);
+                                    dev.buttons &= ~(0x00001000 | 0x00000800);
                                 }
                                 state_changed = true;
                                 break;
                             case ABS_HAT0Y:
                                 if (ev.value < 0) {
-                                    cur_buttons |= 0x00002000;  // DPAD_UP
-                                    cur_buttons &= ~0x00000400; // DPAD_DOWN
+                                    dev.buttons |= 0x00002000;  // DPAD_UP
+                                    dev.buttons &= ~0x00000400; // DPAD_DOWN
                                 } else if (ev.value > 0) {
-                                    cur_buttons |= 0x00000400;  // DPAD_DOWN
-                                    cur_buttons &= ~0x00002000; // DPAD_UP
+                                    dev.buttons |= 0x00000400;  // DPAD_DOWN
+                                    dev.buttons &= ~0x00002000; // DPAD_UP
                                 } else {
-                                    cur_buttons &= ~(0x00002000 | 0x00000400);
+                                    dev.buttons &= ~(0x00002000 | 0x00000400);
                                 }
                                 state_changed = true;
                                 break;
@@ -989,6 +1000,7 @@ static void evdev_reader_thread_func() {
                         } // switch ev.code
                     } // else if EV_ABS
                 } // for k
+                recompute_buttons();
             } // for i
         } // if poll_res > 0
 
