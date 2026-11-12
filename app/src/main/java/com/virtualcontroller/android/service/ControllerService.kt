@@ -523,7 +523,7 @@ class ControllerService : Service() {
     }
 
     /**
-     * Triggered by the notification action: cycle to the next profile (Xbox360 → XboxOne → DS4 → DualSense → ...).
+     * Triggered by the notification action: cycle between the two supported gamepad profiles (xbox and dualsense).
      * Only meaningful in uinput mode; in fallback inject mode the profile is ignored.
      */
     // Guards against re-entrant taps on the "Switch profile" notification action while
