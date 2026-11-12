@@ -44,11 +44,15 @@ object Prefs {
     private const val KEY_L_CENTER_Y = "calib_l_cy"
     private const val KEY_L_DEADZONE = "calib_l_dz"
     private const val KEY_L_INVERT_Y = "calib_l_invy"
+    private const val KEY_L_INVERT_X = "calib_l_invx"
+    private const val KEY_L_SENSITIVITY = "calib_l_sens_x100"
 
     private const val KEY_R_CENTER_X = "calib_r_cx"
     private const val KEY_R_CENTER_Y = "calib_r_cy"
     private const val KEY_R_DEADZONE = "calib_r_dz"
     private const val KEY_R_INVERT_Y = "calib_r_invy"
+    private const val KEY_R_INVERT_X = "calib_r_invx"
+    private const val KEY_R_SENSITIVITY = "calib_r_sens_x100"
 
     private const val KEY_RUMBLE_INTENSITY = "rumble_intensity"  // 0..100
     private const val KEY_MOUSE_SENSITIVITY = "mouse_sensitivity_x10"  // 1..30 → 0.1x..3.0x
@@ -151,7 +155,9 @@ object Prefs {
             centerX = getInt(KEY_L_CENTER_X, 0),
             centerY = getInt(KEY_L_CENTER_Y, 0),
             deadzonePercent = getInt(KEY_L_DEADZONE, 8),
-            invertY = getBoolean(KEY_L_INVERT_Y, false)
+            invertY = getBoolean(KEY_L_INVERT_Y, false),
+            invertX = getBoolean(KEY_L_INVERT_X, false),
+            sensitivity = getInt(KEY_L_SENSITIVITY, 100).coerceIn(20, 300) / 100f
         )
     }
 
@@ -161,6 +167,8 @@ object Prefs {
             .putInt(KEY_L_CENTER_Y, c.centerY)
             .putInt(KEY_L_DEADZONE, c.deadzonePercent)
             .putBoolean(KEY_L_INVERT_Y, c.invertY)
+            .putBoolean(KEY_L_INVERT_X, c.invertX)
+            .putInt(KEY_L_SENSITIVITY, (c.sensitivity.coerceIn(0.2f, 3.0f) * 100f).toInt())
             .apply()
     }
 
@@ -169,7 +177,9 @@ object Prefs {
             centerX = getInt(KEY_R_CENTER_X, 0),
             centerY = getInt(KEY_R_CENTER_Y, 0),
             deadzonePercent = getInt(KEY_R_DEADZONE, 8),
-            invertY = getBoolean(KEY_R_INVERT_Y, false)
+            invertY = getBoolean(KEY_R_INVERT_Y, false),
+            invertX = getBoolean(KEY_R_INVERT_X, false),
+            sensitivity = getInt(KEY_R_SENSITIVITY, 100).coerceIn(20, 300) / 100f
         )
     }
 
@@ -179,6 +189,8 @@ object Prefs {
             .putInt(KEY_R_CENTER_Y, c.centerY)
             .putInt(KEY_R_DEADZONE, c.deadzonePercent)
             .putBoolean(KEY_R_INVERT_Y, c.invertY)
+            .putBoolean(KEY_R_INVERT_X, c.invertX)
+            .putInt(KEY_R_SENSITIVITY, (c.sensitivity.coerceIn(0.2f, 3.0f) * 100f).toInt())
             .apply()
     }
 
@@ -280,10 +292,14 @@ object Prefs {
             leftCenterY = leftCal.centerY,
             leftDeadzone = leftCal.deadzonePercent,
             leftInvertY = leftCal.invertY,
+            leftInvertX = leftCal.invertX,
+            leftSensitivity = leftCal.sensitivity,
             rightCenterX = rightCal.centerX,
             rightCenterY = rightCal.centerY,
             rightDeadzone = rightCal.deadzonePercent,
             rightInvertY = rightCal.invertY,
+            rightInvertX = rightCal.invertX,
+            rightSensitivity = rightCal.sensitivity,
             mouseSensitivity = getMouseSensitivity(context),
             trackpadAsMouse = getTrackpadAsMouseInGamepad(context),
             rumbleIntensity = getRumbleIntensity(context),
@@ -302,12 +318,16 @@ object Prefs {
             centerY = profile.leftCenterY,
             deadzonePercent = profile.leftDeadzone,
             invertY = profile.leftInvertY,
+            invertX = profile.leftInvertX,
+            sensitivity = profile.leftSensitivity,
         ))
         setRightCalibration(context, StickCalibration(
             centerX = profile.rightCenterX,
             centerY = profile.rightCenterY,
             deadzonePercent = profile.rightDeadzone,
             invertY = profile.rightInvertY,
+            invertX = profile.rightInvertX,
+            sensitivity = profile.rightSensitivity,
         ))
         setMouseSensitivity(context, profile.mouseSensitivity)
         setTrackpadAsMouseInGamepad(context, profile.trackpadAsMouse)

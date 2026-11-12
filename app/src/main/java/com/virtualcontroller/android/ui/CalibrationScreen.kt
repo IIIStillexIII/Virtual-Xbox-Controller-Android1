@@ -71,6 +71,18 @@ fun CalibrationScreen(onBack: () -> Unit) {
                 value = cal.deadzonePercent.toFloat(), valueRange = 0f..40f, step = 1f,
                 onValueChange = { onChange(cal.copy(deadzonePercent = it.toInt())) },
             )
+            Text("Sensitivity: %.1f×".format(cal.sensitivity), style = MaterialTheme.typography.bodyMedium)
+            StepSlider(
+                value = cal.sensitivity, valueRange = 0.2f..3.0f, step = 0.1f,
+                onValueChange = { onChange(cal.copy(sensitivity = (kotlin.math.round(it * 10f) / 10f))) },
+            )
+            Row(
+                Modifier.focusRing(SectionShape).clickable { onChange(cal.copy(invertX = !cal.invertX)) }.padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(stringResource(R.string.calib_invert_x), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                ToggleSwitch(cal.invertX)
+            }
             Row(
                 Modifier.focusRing(SectionShape).clickable { onChange(cal.copy(invertY = !cal.invertY)) }.padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
