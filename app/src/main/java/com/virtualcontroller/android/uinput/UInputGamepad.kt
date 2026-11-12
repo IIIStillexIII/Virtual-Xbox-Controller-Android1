@@ -341,7 +341,7 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
             if (rootDeviceReady) {
                 rootBackend.sendFrame(xboxButtons, lxCal, ly, rxCal, ry, lt, rt, dpadX, dpadY)
             } else {
-                svc.sendFrame(xboxButtons, lxCal, ly, rxCal, ry, lt, rt, dpadX, dpadY)
+                svc?.sendFrame(xboxButtons, lxCal, ly, rxCal, ry, lt, rt, dpadX, dpadY)
             }
         } catch (t: Throwable) {
             Log.e(TAG, "sendFrame IPC failed: ${t.message}")
@@ -474,7 +474,7 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
         lastFrameButtons = state.buttons
 
         try {
-            svc.sendMouseFrame(relX, relY, scrollTicks, keys)
+            svc?.sendMouseFrame(relX, relY, scrollTicks, keys)
         } catch (t: Throwable) {
             Log.e(TAG, "sendMouseFrame IPC failed: ${t.message}")
         }
