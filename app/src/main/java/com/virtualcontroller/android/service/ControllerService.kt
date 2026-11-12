@@ -533,9 +533,15 @@ class ControllerService : Service() {
         }
         profileSwitchInFlight = true
 
-        val profiles = com.virtualcontroller.android.uinput.GamepadProfile.values()
+        val profiles = com.virtualcontroller.android.uinput.GamepadProfile.values().filter { !it.isMouseMode }
         val current = Prefs.getProfile(this)
-        val next = profiles[(current.ordinal + 1) % profiles.size]
+        if (current.isMouseMode) {
+            profileSwitchInFlight = false
+            Log.i(TAG, "Profile cycling is unavailable in Desktop mode")
+            return
+        }
+        val currentIndex = profiles.indexOfFirst { it.id == current.id }.coerceAtLeast(0)
+        val next = profiles[(currentIndex + 1) % profiles.size]
         Prefs.setProfile(this, next)
         Log.i(TAG, "Cycle profile: ${current.displayName} → ${next.displayName}")
 
