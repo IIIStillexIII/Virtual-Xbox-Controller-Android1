@@ -98,6 +98,8 @@ object BackupManager {
         put("cy", c.centerY)
         put("dz", c.deadzonePercent)
         put("invY", c.invertY)
+        put("invX", c.invertX)
+        put("sensitivity", c.sensitivity.toDouble())
     }
 
     private fun calFromJson(o: JSONObject): StickCalibration = StickCalibration(
@@ -105,5 +107,7 @@ object BackupManager {
         centerY = o.optInt("cy", 0),
         deadzonePercent = o.optInt("dz", 8),
         invertY = o.optBoolean("invY", false),
+        invertX = o.optBoolean("invX", false),
+        sensitivity = o.optDouble("sensitivity", 1.0).toFloat().coerceIn(0.2f, 3.0f),
     )
 }
