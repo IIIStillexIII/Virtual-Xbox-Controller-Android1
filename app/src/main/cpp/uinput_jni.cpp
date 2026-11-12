@@ -623,6 +623,8 @@ static void evdev_reader_thread_func() {
         bool has_gamepad_button{false};
         bool has_hat_x{false};
         bool has_hat_y{false};
+        int hat_x_code{-1};
+        int hat_y_code{-1};
         struct input_absinfo abs_x{};
         struct input_absinfo abs_y{};
         struct input_absinfo abs_rx{};
@@ -818,15 +820,21 @@ static void evdev_reader_thread_func() {
                     if (trigger > 16384) dev.buttons |= 0x00800000;
                     break;
                 }
-                case ABS_HAT0X:
-                    dev.buttons &= ~(0x00001000 | 0x00000800);
-                    if (value < 0) dev.buttons |= 0x00001000;
-                    else if (value > 0) dev.buttons |= 0x00000800;
+                case ABS_HAT0X: case ABS_HAT1X:
+                case ABS_HAT2X: case ABS_HAT3X:
+                    if (code == dev.hat_x_code) {
+                        dev.buttons &= ~(0x00001000 | 0x00000800);
+                        if (value < 0) dev.buttons |= 0x00001000;
+                        else if (value > 0) dev.buttons |= 0x00000800;
+                    }
                     break;
-                case ABS_HAT0Y:
-                    dev.buttons &= ~(0x00002000 | 0x00000400);
-                    if (value < 0) dev.buttons |= 0x00002000;
-                    else if (value > 0) dev.buttons |= 0x00000400;
+                case ABS_HAT0Y: case ABS_HAT1Y:
+                case ABS_HAT2Y: case ABS_HAT3Y:
+                    if (code == dev.hat_y_code) {
+                        dev.buttons &= ~(0x00002000 | 0x00000400);
+                        if (value < 0) dev.buttons |= 0x00002000;
+                        else if (value > 0) dev.buttons |= 0x00000400;
+                    }
                     break;
                 default: break;
             }
@@ -846,8 +854,12 @@ static void evdev_reader_thread_func() {
         // Hat capabilities are queried separately because they are not stored
         // in the compact stick/trigger capability flags above.
         struct input_absinfo hat{};
-        if (ioctl(dev.fd, EVIOCGABS(ABS_HAT0X), &hat) >= 0) apply_axis(ABS_HAT0X, hat);
-        if (ioctl(dev.fd, EVIOCGABS(ABS_HAT0Y), &hat) >= 0) apply_axis(ABS_HAT0Y, hat);
+        if (dev.hat_x_code >= 0 &&
+            ioctl(dev.fd, EVIOCGABS(dev.hat_x_code), &hat) >= 0)
+            apply_axis(dev.hat_x_code, hat);
+        if (dev.hat_y_code >= 0 &&
+            ioctl(dev.fd, EVIOCGABS(dev.hat_y_code), &hat) >= 0)
+            apply_axis(dev.hat_y_code, hat);
     };
 
     auto rescan_devices = [&]() {
@@ -931,9 +943,20 @@ static void evdev_reader_thread_func() {
                 has_key_code(BTN_GAMEPAD) || has_key_code(BTN_JOYSTICK);
             const bool has_stick_pair =
                 has_abs_code(ABS_X) && has_abs_code(ABS_Y);
+            int selected_hat_x = -1;
+            int selected_hat_y = -1;
+            for (int hat = 0; hat < 4; ++hat) {
+                const int hat_x = ABS_HAT0X + hat * 2;
+                const int hat_y = hat_x + 1;
+                if (has_abs_code(hat_x) && has_abs_code(hat_y)) {
+                    selected_hat_x = hat_x;
+                    selected_hat_y = hat_y;
+                    break;
+                }
+            }
             const bool has_secondary_stick =
                 (has_abs_code(ABS_RX) && has_abs_code(ABS_RY)) ||
-                (has_abs_code(ABS_HAT0X) && has_abs_code(ABS_HAT0Y));
+                (selected_hat_x >= 0 && selected_hat_y >= 0);
             if (!has_gamepad_button && !(has_stick_pair && has_secondary_stick)) {
                 close(fd);
                 continue;
@@ -970,8 +993,10 @@ static void evdev_reader_thread_func() {
             dev.uniq = uniq_str;
             ioctl(fd, EVIOCGID, &dev.id);
             dev.has_gamepad_button = has_gamepad_button;
-            dev.has_hat_x = has_abs_code(ABS_HAT0X);
-            dev.has_hat_y = has_abs_code(ABS_HAT0Y);
+            dev.has_hat_x = selected_hat_x >= 0;
+            dev.has_hat_y = selected_hat_y >= 0;
+            dev.hat_x_code = selected_hat_x;
+            dev.hat_y_code = selected_hat_y;
 
             // Reuse the axis capability bitmap collected above.
             auto has_abs_cap = [&](int code) {
@@ -1250,29 +1275,23 @@ static void evdev_reader_thread_func() {
                                 state_changed = true;
                                 break;
                             }
-                            case ABS_HAT0X:
-                                if (ev.value < 0) {
-                                    dev.buttons |= 0x00001000;  // DPAD_LEFT
-                                    dev.buttons &= ~0x00000800; // DPAD_RIGHT
-                                } else if (ev.value > 0) {
-                                    dev.buttons |= 0x00000800;  // DPAD_RIGHT
-                                    dev.buttons &= ~0x00001000; // DPAD_LEFT
-                                } else {
+                            case ABS_HAT0X: case ABS_HAT1X:
+                            case ABS_HAT2X: case ABS_HAT3X:
+                                if (ev.code == dev.hat_x_code) {
                                     dev.buttons &= ~(0x00001000 | 0x00000800);
+                                    if (ev.value < 0) dev.buttons |= 0x00001000;
+                                    else if (ev.value > 0) dev.buttons |= 0x00000800;
+                                    state_changed = true;
                                 }
-                                state_changed = true;
                                 break;
-                            case ABS_HAT0Y:
-                                if (ev.value < 0) {
-                                    dev.buttons |= 0x00002000;  // DPAD_UP
-                                    dev.buttons &= ~0x00000400; // DPAD_DOWN
-                                } else if (ev.value > 0) {
-                                    dev.buttons |= 0x00000400;  // DPAD_DOWN
-                                    dev.buttons &= ~0x00002000; // DPAD_UP
-                                } else {
+                            case ABS_HAT0Y: case ABS_HAT1Y:
+                            case ABS_HAT2Y: case ABS_HAT3Y:
+                                if (ev.code == dev.hat_y_code) {
                                     dev.buttons &= ~(0x00002000 | 0x00000400);
+                                    if (ev.value < 0) dev.buttons |= 0x00002000;
+                                    else if (ev.value > 0) dev.buttons |= 0x00000400;
+                                    state_changed = true;
                                 }
-                                state_changed = true;
                                 break;
                             default: break;
                         } // switch ev.code
