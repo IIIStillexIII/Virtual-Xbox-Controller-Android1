@@ -15,6 +15,7 @@ import android.util.Log
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import com.virtualcontroller.android.Prefs
+import com.virtualcontroller.android.InjectionBackend
 import com.virtualcontroller.android.R
 import com.virtualcontroller.android.Transport
 import com.virtualcontroller.android.bt.BluetoothHidManager
@@ -506,33 +507,35 @@ class ControllerService : Service() {
         handleState(state)
     }
 
-    // Try uinput first (real InputDevice, works in games). Fall back to inject if uinput is denied.
+    // Use only the backend explicitly selected in Settings. Shizuku retains its
+    // pre-existing injectInputEvent compatibility fallback; Root never silently
+    // switches to Shizuku when root uinput is unavailable.
     private suspend fun chooseInjectionMode() {
-        // 1. Try uinput via Shizuku UserService
+        val selectedBackend = Prefs.getInjectionBackend(this@ControllerService)
         try {
-            uinput.bind()
+            uinput.bind(selectedBackend)
             for (attempt in 0 until 20) {
                 if (uinput.isReady) break
                 delay(150)
             }
             if (uinput.isReady) {
                 setMode(InjectionMode.UINPUT)
-                Log.i(TAG, "Using uinput virtual gamepad (${Prefs.getProfile(this@ControllerService).displayName})")
+                Log.i(TAG, "Using ${selectedBackend.displayName} uinput virtual gamepad (${Prefs.getProfile(this@ControllerService).displayName})")
                 return
             }
-            Log.w(TAG, "uinput service did not become ready, falling back to inject")
+            Log.w(TAG, "Selected ${selectedBackend.displayName} uinput backend did not become ready")
             uinput.unbind()
         } catch (t: Throwable) {
-            Log.w(TAG, "uinput bind failed: ${t.message}, falling back to inject")
+            Log.e(TAG, "Selected ${selectedBackend.displayName} backend failed: ${t.message}")
+            try { uinput.unbind() } catch (_: Throwable) {}
         }
 
-        // 2. Fallback: legacy injectInputEvent via Shizuku reflection
-        if (legacyInjector.init()) {
+        if (selectedBackend == InjectionBackend.SHIZUKU && legacyInjector.init()) {
             setMode(InjectionMode.SHIZUKU_INJECT)
-            Log.i(TAG, "Using legacy Shizuku injectInputEvent (games may filter this)")
+            Log.w(TAG, "Using legacy Shizuku injectInputEvent fallback; this is not a virtual uinput gamepad and may be filtered by games")
         } else {
             setMode(InjectionMode.NONE)
-            Log.e(TAG, "No injection method available")
+            Log.e(TAG, "Selected backend unavailable; no automatic switch to another backend was performed")
         }
     }
 
