@@ -6,7 +6,7 @@ This is **my development fork**, not the original repository. The original upstr
 
 ## Project goal
 
-The goal of this fork is to keep the original Virtual Xbox Controller app and its overall design as close to upstream as practical, while improving it into a reliable system-wide controller bridge for Android. A generic physical gamepad connected over USB or Bluetooth should be mapped to one of the preserved original virtual controller profiles, with **Xbox Series X|S** added as a new profile — so Android and games that support those controller input paths can recognize and use it as a gamepad. The app must also retain **Desktop mode**, use the **root backend first** with **Shizuku as a fallback**, and provide complete practical mapping for buttons, sticks, triggers and D-pad.
+The goal of this fork is to keep the original Virtual Xbox Controller app and its overall design as close to upstream as practical, while improving it into a reliable system-wide controller bridge for Android. A generic physical gamepad connected over USB or Bluetooth should be translated into exactly one of two virtual gamepad profiles: **Xbox Series X|S** or **PlayStation 5 DualSense**. Separately, the app has a **Controller Mode** selector with **Gamepad** and **Desktop (mouse + keyboard)** modes. Desktop is a controller operating mode, not a virtual gamepad profile. The app uses the **root backend first** with **Shizuku as a fallback**, and provides practical mapping for buttons, sticks, triggers and D-pad.
 
 ### Original project remains the foundation
 
@@ -20,16 +20,21 @@ The original Virtual Xbox Controller is the project's foundation and must remain
 
 Use other projects such as [GPad2Xbox](https://github.com/ZHStore19/GPad2Xbox) only as technical references for specific ideas where useful. They are not a replacement foundation, and their architecture or implementation must not be copied wholesale. Prefer small, targeted changes that integrate with the original Virtual Xbox Controller architecture and preserve its existing UI, Desktop mode, services, and working features.
 
-Every change should have a clear reason, a narrowly defined scope, and a compatibility check against existing behavior. Preserve every profile already implemented by the original project. Add new profiles using new IDs; never remove or repurpose an existing profile ID.
+Every change should have a clear reason, a narrowly defined scope, and a compatibility check against the intended fork behavior. This fork intentionally supports only two virtual gamepad profiles: Xbox Series X|S and PS5 DualSense. Do not restore Xbox 360, Xbox One, or DualShock 4 profiles. Keep Desktop as a separate Controller Mode, not a gamepad profile.
 
 A key target for compatibility testing is **Call of Duty: Mobile (CODM)**, alongside other Android games with controller support. The objective is genuine system-level input-device recognition, **not** an on-screen overlay or touch-control/macro mapping. CODM compatibility is a target to verify on real devices; it is not claimed as guaranteed, and this project does not attempt to bypass a game's anti-cheat or controller restrictions.
 
-This is a specialized fork of the original Virtual Xbox Controller project. The fork's intended profile set preserves the original profiles and adds Xbox Series X|S:
+This fork intentionally exposes exactly two virtual gamepad profiles:
 
-- **Xbox** — Xbox-style virtual controller profile.
-- **DualSense** — PlayStation 5 DualSense-style virtual controller profile.
+- **Xbox Series X|S** — Xbox Series-style virtual controller profile.
+- **PS5 DualSense** — PlayStation 5 DualSense-style virtual controller profile.
 
-**Desktop mode** is a separate input mode for mouse/keyboard-style navigation. It is not a third virtual gamepad profile.
+Separately, **Controller Mode** has two operating modes:
+
+- **Gamepad** — use the selected Xbox Series X|S or PS5 DualSense virtual gamepad profile.
+- **Desktop (mouse + keyboard)** — use the physical controller for desktop-style mouse/keyboard input.
+
+Desktop is not a third gamepad profile and must not appear in the virtual gamepad profile list. Do not restore Xbox 360, Xbox One, or DualShock 4 profiles.
 
 ### CODM compatibility objective: make different physical gamepads usable
 
@@ -112,33 +117,35 @@ This project is a fork of [misakidebugged/Virtual-Xbox-Controller-Android](https
 
 > This section records implementation decisions and the verified repository state so future contributors and AI coding assistants can continue the work without accidentally undoing earlier decisions. When this section conflicts with an older sentence elsewhere in this README, follow this section and update the older sentence in the same documentation change.
 
-## A. Profile compatibility contract
+## A. Product model: two gamepad profiles plus a separate Controller Mode
 
-The original `GamepadProfile.kt` profile IDs were:
+This fork intentionally supports **exactly two virtual gamepad profiles**:
 
-| ID | Original meaning | Status |
-|---:|---|---|
-| 0 | Xbox 360 | Must remain ID 0 |
-| 1 | Xbox One | Must remain ID 1 |
-| 2 | DualShock 4 | Must remain ID 2 |
-| 3 | DualSense | Must remain ID 3 |
-| 4 | Desktop | Must remain ID 4; separate desktop mode |
+1. **Xbox Series X|S**
+2. **PS5 DualSense**
 
-Add Xbox Series X|S under a new ID, proposed **5**. Never reuse ID 0 for Xbox Series. Never remove Xbox One or DualShock 4. A stored ID is persistent user data: silently changing its meaning is a breaking change.
+Do **not** restore the original Xbox 360, Xbox One, or DualShock 4 virtual profiles. The fork's goal is not backward compatibility with those controller emulations; they are intentionally out of scope.
 
-The following must use the same profile IDs and meanings:
+Controller Mode is a separate application concept with two values:
 
-- Kotlin `GamepadProfile` definitions and `fromId` lookup.
-- Native C++ profile table in `uinput_jni.cpp`.
-- JNI profile selection and any index conversion.
-- Preferences, defaults, serialization, and migrations.
-- Home/debug UI selectors and labels.
-- Notification actions and profile-cycling logic.
-- Any fallback behavior for unknown or missing IDs.
+- **Gamepad** — activates the selected virtual gamepad profile (Xbox Series X|S or PS5 DualSense).
+- **Desktop (mouse + keyboard)** — uses the physical controller for desktop-style pointer/keyboard behavior.
 
-Unknown IDs must fail safely. They must not cause a known legacy ID to be reinterpreted as another profile. Add tests for all stable IDs and legacy stored values where practical.
+Desktop is not a virtual controller profile, not a third gamepad target, and must not be shown in the virtual gamepad profile selector.
 
-**Do not claim this is already fixed:** the inspected `main` branch has a known regression described below. The table is the required target state.
+### Current implementation detail that must not be confused with the product model
+
+At the last source inspection, `GamepadProfile.kt` contains:
+
+- `XBOX` with ID 0.
+- `DUALSENSE` with ID 3.
+- `MOUSE` with ID 4 and `isMouseMode = true`.
+
+The `MOUSE` enum entry is an internal legacy representation used by the current implementation to persist/toggle Desktop behavior. It is **not** a third virtual gamepad profile. The UI already presents a separate **Control mode** choice between Gamepad and Desktop, then displays the gamepad profile choices only in Gamepad mode.
+
+When refactoring this area, preserve the user's intended behavior and saved settings for the two supported profiles, but do not reintroduce Xbox 360, Xbox One, or DualShock 4. Prefer making the separation explicit in the model (for example, a dedicated `ControllerMode` enum/state plus a `GamepadProfile` containing only Xbox Series and DualSense) if this can be done safely across preferences, service state, notifications, and native code. Do not perform a partial refactor that breaks Desktop mode or profile selection.
+
+The current IDs 0 and 3 are implementation details already present in the fork. Do not renumber them casually; check every Kotlin/native/JNI/preference reference before changing IDs. The Desktop sentinel ID 4 must not be described as a gamepad profile ID.
 
 ## B. Verified fork/upstream comparison (12 November 2026)
 
@@ -187,11 +194,11 @@ Important original files confirmed identical at that audit:
 
 This means the original Steam transports/protocol/parser and core mapping files were not changed in that comparison. It does **not** mean the fork is regression-free: the 14 changed files include critical native, service, profile, preference, and UI code.
 
-### Known profile regression on fork main
+### Clarification of the previous profile audit
 
-At the audit, original Kotlin IDs were Xbox 360=0, Xbox One=1, DualShock 4=2, DualSense=3, Desktop=4. The fork's `main` had changed ID 0 to Xbox Series and removed Xbox One and DualShock 4. This can reinterpret saved ID 0 and make saved IDs 1/2 fall through to an Xbox fallback.
+The original project had Xbox 360, Xbox One, and DualShock 4 profiles. Their absence in this fork is **intentional**, not a regression, because the product scope has been explicitly narrowed to Xbox Series X|S and PS5 DualSense only.
 
-**Next priority: restore all original IDs and profiles, add Xbox Series as ID 5, and synchronize Kotlin/native/UI/preferences/notification code.** Do this in a dedicated feature branch and PR, not directly on `main`.
+The important audit point is instead to ensure the two supported profiles remain correctly represented and selectable, and that Desktop stays a separate Controller Mode. Do not spend development effort restoring the three intentionally excluded profiles.
 
 ## C. Implementation notes
 
@@ -240,13 +247,15 @@ This work was not part of `main` at the last audit. The latest CI status for the
 
 ## E. Ordered roadmap — continue in this order
 
-### 1. Fix profile IDs first
+### 1. Verify and cleanly separate Controller Mode from Gamepad Profile
 
-- Restore Xbox 360=0, Xbox One=1, DualShock 4=2, DualSense=3, Desktop=4.
-- Add Xbox Series as ID 5.
-- Synchronize Kotlin, C++, JNI, preferences, migration/defaults, UI, notification cycling, and lookup fallbacks.
-- Test all profile IDs and legacy persisted values.
-- Build and submit a focused PR. Do not commit directly to `main`.
+- Keep only Xbox Series X|S and PS5 DualSense as virtual gamepad profiles.
+- Keep Gamepad and Desktop (mouse + keyboard) as Controller Mode choices.
+- Do not restore Xbox 360, Xbox One, or DualShock 4.
+- Audit the current `MOUSE` sentinel in `GamepadProfile.kt`: it is currently used internally for Desktop mode, but should not be presented or conceptualized as a third gamepad profile.
+- Consider a dedicated `ControllerMode` model/state and a `GamepadProfile` model containing only the two supported virtual gamepad profiles. Refactor only if the full preferences, UI, service, notification, and native lifecycle can be updated coherently.
+- Preserve the existing Xbox ID 0 and DualSense ID 3 unless a complete migration is designed and tested.
+- Verify profile selection, Desktop switching back to the last selected gamepad profile, app restart persistence, notification actions, and native profile selection.
 
 ### 2. Review and validate PR #2
 
@@ -270,9 +279,9 @@ This work was not part of `main` at the last audit. The latest CI status for the
 
 ### 5. Test real controllers and games
 
-Test USB HID, USB XInput-style, generic Bluetooth, and Steam Controller paths separately. Test multiple physical controllers if multi-device support is intended. Validate each output profile separately, including the original Xbox 360, Xbox One, DualShock 4, DualSense, and the new Xbox Series profile.
+Test USB HID, USB XInput-style, generic Bluetooth, and Steam Controller paths separately. Test multiple physical controllers if multi-device support is intended. Validate both output profiles independently: Xbox Series X|S and PS5 DualSense. Also test both Controller Modes: Gamepad and Desktop.
 
-For CODM and every other target game, record the phone model, Android build, game version, physical controller, connection, selected profile, backend, app commit, and logs. Distinguish these checkpoints:
+For CODM and every other target game, record the phone model, Android build, game version, physical controller, connection, selected gamepad profile, Controller Mode, backend, app commit, and logs. Distinguish these checkpoints:
 
 1. Physical controller is discovered.
 2. Physical evdev events are read.
@@ -292,7 +301,7 @@ When a game does not react, inspect each layer rather than assuming the physical
 3. Do its button/axis events arrive?
 4. Are events normalized and mapped correctly?
 5. Did the selected root or Shizuku backend create the virtual uinput device?
-6. Does the virtual device expose the expected capabilities and profile?
+6. Does the virtual device expose the expected capabilities and selected profile?
 7. Does Android InputReader classify it as a gamepad/joystick?
 8. Does the target game accept it?
 
@@ -310,16 +319,17 @@ An event visible in `getevent` proves only that the physical input path works. I
 - Run the configured Gradle/CI build for the exact commit being reviewed.
 - Never report an older passing workflow as proof that a newer commit passed.
 - CI compilation is not physical-device validation.
-- Changes to USB, Bluetooth, evdev, uinput, root, Shizuku, or profile IDs require appropriate real-device tests before being called verified.
+- Changes to USB, Bluetooth, evdev, uinput, root, Shizuku, Controller Mode, or gamepad profiles require appropriate real-device tests before being called verified.
 - If hardware testing was not performed, label the change **not device-verified**.
 
-Bug reports should include app commit/version, phone model, Android build, controller model, USB/Bluetooth connection, selected profile, backend, logs, exact reproduction steps, and (for game-specific issues) game version. Never include passwords, access tokens, private keys, or other secrets.
+Bug reports should include app commit/version, phone model, Android build, controller model, USB/Bluetooth connection, selected gamepad profile, Controller Mode, backend, logs, exact reproduction steps, and (for game-specific issues) game version. Never include passwords, access tokens, private keys, or other secrets.
 
 ## H. Scope guardrails
 
+- Exactly two virtual gamepad profiles: Xbox Series X|S and PS5 DualSense.
+- Desktop (mouse + keyboard) is a separate Controller Mode, not a gamepad profile.
+- Do not restore Xbox 360, Xbox One, or DualShock 4 virtual profiles.
 - CODM is an important test target, not the only supported use case.
 - No touchscreen mapping, touch injection, macro engine, or overlay is a substitute for the system virtual-device output.
 - Do not promise universal compatibility across all Android devices, kernels, games, or controllers.
-- Do not claim Switch Pro profile support unless it is implemented and verified in the actual source.
-- Preserve Desktop mode separately from gamepad profile selection.
-- Preserve original upstream features and attribution; all development work belongs in this fork.
+- Preserve Desktop behavior, original Steam handling, and upstream attribution; all development work belongs in this fork.
