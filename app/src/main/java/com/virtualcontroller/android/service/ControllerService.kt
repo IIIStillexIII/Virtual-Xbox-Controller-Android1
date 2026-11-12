@@ -61,6 +61,11 @@ class ControllerService : Service() {
         private val _modeFlow = MutableStateFlow(InjectionMode.NONE)
         val modeFlow: StateFlow<InjectionMode> = _modeFlow.asStateFlow()
 
+        // Incremented when the selected injection backend cannot initialize at all.
+        // MainActivity uses this to unlock Settings again after an early startup failure.
+        private val _startFailureCount = MutableStateFlow(0)
+        val startFailureCount: StateFlow<Int> = _startFailureCount.asStateFlow()
+
         // Emits the active emulated profile id whenever it changes (start, cycle from notif, etc.)
         private val _profileFlow = MutableStateFlow<Int?>(null)
         val profileFlow: StateFlow<Int?> = _profileFlow.asStateFlow()
@@ -362,6 +367,7 @@ class ControllerService : Service() {
         Log.i(TAG, "Initializing with transport=$transport")
         chooseInjectionMode()
         if (mode == InjectionMode.NONE) {
+            _startFailureCount.value = _startFailureCount.value + 1
             // Keep a visible error after stopping instead of leaving a "Connecting…" notification.
             val selectedBackend = Prefs.getInjectionBackend(this)
             val failureMessage = when (selectedBackend) {
