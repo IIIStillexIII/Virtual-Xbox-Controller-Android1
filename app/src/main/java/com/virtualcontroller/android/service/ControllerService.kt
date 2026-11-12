@@ -216,9 +216,13 @@ class ControllerService : Service() {
                         announceProfileLoaded(bound.name)
                         _profileFlow.value = bound.profileId
                     } else {
-                        Log.w(TAG, "Auto-switch to '${bound.name}' failed; keeping ${previousProfile.displayName} and current settings")
+                        Log.w(TAG, "Auto-switch to '${bound.name}' failed; attempting to restore ${previousProfile.displayName}")
                         Prefs.setProfile(this@ControllerService, previousProfile)
                         _profileFlow.value = previousProfile.id
+                        if (!uinput.switchProfile(previousProfile)) {
+                            Log.e(TAG, "Could not restore the previous virtual gamepad after auto-switch failure")
+                            stopSelf()
+                        }
                     }
                     refreshNotification()
                 } finally {
@@ -584,7 +588,8 @@ class ControllerService : Service() {
                     Prefs.setProfile(this@ControllerService, current)
                     selected = current
                     if (!uinput.switchProfile(current)) {
-                        Log.e(TAG, "Could not restore the previous virtual gamepad profile")
+                        Log.e(TAG, "Could not restore the previous virtual gamepad profile; stopping controller service")
+                        stopSelf()
                     }
                 }
                 _profileFlow.value = selected.id
