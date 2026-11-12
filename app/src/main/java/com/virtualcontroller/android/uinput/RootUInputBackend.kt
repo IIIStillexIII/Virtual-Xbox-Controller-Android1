@@ -100,14 +100,18 @@ class RootUInputBackend(private val context: Context) {
     fun canOpen(): Boolean = requestBoolean(OP_CAN_OPEN)
 
     @Synchronized
-    fun createDevice(profileId: Int): Boolean = try {
-        output?.writeInt(OP_CREATE) ?: return false
-        output?.writeInt(profileId) ?: return false
-        output?.flush()
-        input?.readBoolean() ?: false
-    } catch (t: Throwable) {
-        Log.w(TAG, "createDevice failed: ${t.message}")
-        false
+    fun createDevice(profileId: Int): Boolean {
+        return try {
+            val out = output ?: return false
+            val inp = input ?: return false
+            out.writeInt(OP_CREATE)
+            out.writeInt(profileId)
+            out.flush()
+            inp.readBoolean()
+        } catch (t: Throwable) {
+            Log.w(TAG, "createDevice failed: ${t.message}")
+            false
+        }
     }
 
     @Synchronized
@@ -144,14 +148,18 @@ class RootUInputBackend(private val context: Context) {
     }
 
     @Synchronized
-    fun pollForceFeedback(): IntArray? = try {
-        output?.writeInt(OP_POLL_FF) ?: return null
-        output?.flush()
-        val size = input?.readInt() ?: return null
-        if (size < 0) null else IntArray(size) { input!!.readInt() }
-    } catch (t: Throwable) {
-        Log.w(TAG, "pollForceFeedback failed: ${t.message}")
-        null
+    fun pollForceFeedback(): IntArray? {
+        return try {
+            val out = output ?: return null
+            val inp = input ?: return null
+            out.writeInt(OP_POLL_FF)
+            out.flush()
+            val size = inp.readInt()
+            if (size < 0) null else IntArray(size) { inp.readInt() }
+        } catch (t: Throwable) {
+            Log.w(TAG, "pollForceFeedback failed: ${t.message}")
+            null
+        }
     }
 
     @Synchronized
@@ -164,13 +172,17 @@ class RootUInputBackend(private val context: Context) {
         closeConnection()
     }
 
-    private fun requestBoolean(op: Int): Boolean = try {
-        output?.writeInt(op) ?: return false
-        output?.flush()
-        input?.readBoolean() ?: false
-    } catch (t: Throwable) {
-        Log.w(TAG, "request $op failed: ${t.message}")
-        false
+    private fun requestBoolean(op: Int): Boolean {
+        return try {
+            val out = output ?: return false
+            val inp = input ?: return false
+            out.writeInt(op)
+            out.flush()
+            inp.readBoolean()
+        } catch (t: Throwable) {
+            Log.w(TAG, "request $op failed: ${t.message}")
+            false
+        }
     }
 
     private fun closeConnection() {
