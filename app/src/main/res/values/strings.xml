@@ -6,6 +6,7 @@
     <string name="status_running">Controller active</string>
     <string name="shizuku_not_running">Shizuku is not running. Please start Shizuku first.</string>
     <string name="shizuku_permission_denied">Shizuku permission denied.</string>
+    <string name="injection_backend_unavailable">Selected %1$s backend is unavailable. Check its status and permissions in Settings.</string>
     <string name="btn_start">Start Service</string>
     <string name="theme_dynamic_unavailable">Dynamic colour needs Android 12 or newer.</string>
     <string name="btn_stop">Stop Service</string>
