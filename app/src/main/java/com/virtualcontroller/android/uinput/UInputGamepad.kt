@@ -280,14 +280,19 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
         return try {
             val ok = if (rootDeviceReady) rootBackend.createDevice(newProfile.id)
                      else svc?.createGamepad(newProfile.id) == true
+            // Native createDevice() destroys the previous uinput device before
+            // attempting recreation. A failed switch therefore means there may
+            // be no usable virtual device, even though the backend connection lives.
+            deviceReady = ok
             if (ok) {
                 profile = newProfile
                 Log.i(TAG, "Switched profile to ${newProfile.displayName}")
             } else {
-                Log.e(TAG, "createGamepad(${newProfile.displayName}) returned false")
+                Log.e(TAG, "createGamepad(${newProfile.displayName}) returned false; virtual device is not ready")
             }
             ok
         } catch (t: Throwable) {
+            deviceReady = false
             Log.e(TAG, "switchProfile failed: ${t.message}")
             false
         }
