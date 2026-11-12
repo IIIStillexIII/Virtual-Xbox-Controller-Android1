@@ -1,136 +1,76 @@
-# Generic Bluetooth Controller to Virtual Xbox 360 Controller
+# Virtual Xbox Controller for Android
 
-![Android Min SDK](https://img.shields.io/badge/Android-8.0%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white)
-![Shizuku Required](https://img.shields.io/badge/Shizuku-Required-FF6F00?style=for-the-badge)
-![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)
+Android controller bridge that reads supported physical game controllers and exposes a system-wide virtual gamepad through Android's Linux input stack.
 
-An Android application that turns generic HID Bluetooth gamepads (and Valve Steam Controllers) into a system-wide recognized official Xbox 360 controller using elevated rootless permissions via [Shizuku](https://shizuku.rikka.app/). 
+This is a specialized fork of the original Virtual Xbox Controller project. The current fork focuses on two virtual gamepad profiles:
 
-This project is a specialized fork of [SonicDX12/SteamController-Android](https://github.com/SonicDX12/SteamController-Android), expanded to support generic Bluetooth HID controllers as its primary focus.
+- **Xbox** — Xbox-style virtual controller profile.
+- **DualSense** — PlayStation 5 DualSense-style virtual controller profile.
 
----
+**Desktop mode** is a separate input mode for mouse/keyboard-style navigation. It is not a third virtual gamepad profile.
 
-## Why This Project Exists
-
-Many high-end Android mobile games boast official gamepad support, yet routinely ignore budget gamers who cannot or do not want to spend $50–$80 on an official Xbox or PlayStation controller. Meanwhile, perfectly usable $20–$30 Bluetooth gamepads (such as iPega, 8BitDo, and generic HID controllers) are left unrecognized by major titles:
-
-- **Call of Duty: Mobile**
-- **Apex Legends Mobile**
-- **Alien: Isolation**
-- **GRID Autosport**
-- **GTA: The Trilogy – The Definitive Edition**
-- **Dead Cells**
-- **Castlevania: Symphony of the Night**
-- **Pascal's Wager**
-- **Bloodstained: Ritual of the Night**
-- **Minecraft**
-- **Genshin Impact**
-- **Arknights: Endfield**
-- ...and many, many more.
-
-> *"I wanted a solution that would route my existing controller to be recognized as an Xbox 360 controller system-wide on Android—similar to the popular Windows tool **x360ce**—but couldn't find one..."*
->
-> ### ***"Fine, I'll do it myself."***
-
----
-
-> [!NOTE]
-> **Tested & Verified Hardware**: Real-world testing was conducted on an **iPega extendable HID controller**, successfully enabling native controller support in **Arknights: Endfield** via the virtual Xbox 360 controller.
-
----
-
-## How It Works
+## How it works
 
 ```
-Physical Bluetooth / USB Controller (iPega, 8BitDo, HID, Steam Controller)
-                          │
-                          ▼
-            Linux evdev (/dev/input/event*)
-                          │
-                          ▼
-             Exclusive Input Grab (EVIOCGRAB)
-            (Prevents double/ghost keypresses)
-                          │
-                          ▼
-     ControllerService & Motion/Button Mapping Pipeline
-                          │
-                          ▼
-          UInputService (via Shizuku / shell UID)
-                          │
-                          ▼
-             Linux /dev/uinput Kernel Device
-                          │
-                          ▼
-       System-Wide Virtual Xbox 360 Controller
-              (Recognized natively by Android & games)
+Physical controller (USB or Bluetooth, where supported)
+                 |
+                 v
+        Android/Linux input events
+                 |
+                 v
+       Controller mapping pipeline
+                 |
+                 v
+       Virtual device via uinput
+                 |
+                 v
+       Android system input stack
 ```
 
-1. **Input Interception (`evdev`)**: Intercepts low-level input events directly from `/dev/input/event*` nodes for connected Bluetooth/USB controllers.
-2. **Exclusive Input Grabbing (`EVIOCGRAB`)**: Grabs the physical controller exclusively at the Linux kernel level while active, preventing double-keypresses or ghost inputs in games.
-3. **Virtual Gamepad Creation (`/dev/uinput`)**: Spawns a real, system-wide virtual Xbox 360 controller via Shizuku (`shell` UID).
-4. **Game Recognition**: Games recognize a native Xbox 360 controller with standard button prompts and full compatibility.
+The app reads supported physical input devices and maps their buttons, sticks, triggers and D-pad to the selected virtual profile. The virtual device is created through Linux `uinput`.
 
----
+### Important technical limitation
 
-## Features
+A virtual `uinput` device is a Linux input-core device. Setting a device name or USB-style vendor/product identifiers does **not** make it a genuine Xbox Series X|S or DualSense USB/Bluetooth HID device, nor does it reproduce those controllers' original hardware protocols. Actual recognition depends on the Android build, kernel input stack and the target app.
 
-### Connection & Routing
-- **Generic Bluetooth HID Controllers**: Full support for any paired Bluetooth gamepad (iPega, 8BitDo, MOGA, generic HID controllers).
-- **Steam Controller Support**: Supports Valve Steam Controllers (2026 models) via Bluetooth LE or USB OTG (Puck dongle).
-- **Exclusive Access**: Employs Linux `EVIOCGRAB` to prevent physical inputs from leaking alongside virtual inputs.
-- **Auto-Start**: Automatically launches the controller service when a paired Bluetooth controller connects.
+In particular, virtual-controller operation does not guarantee that every game — including Call of Duty: Mobile — will accept the device. Compatibility must be verified on the target phone, Android build and game version.
 
-### Emulation & Profiles
-- **Emulated Gamepads**: Xbox 360 (default for broadest game compatibility), Xbox One, DualShock 4, DualSense, and Switch Pro.
-- **Desktop Mode**: Maps controller inputs to virtual mouse movements and keyboard keys for Android TV and app navigation.
-- **Game Profile Auto-Switching**: Automatically switches mappings and profiles based on the foreground application.
-- **Notification Quick-Switch**: Cycle active emulated controller profiles directly from the status notification.
+## Input and injection
 
-### Tuning & Customization
-- **Stick Calibration**: Live dead zone tuning, center offset capture, Y-axis inversion, and 2D visualizer.
-- **Button Remapping**: Remap physical buttons to Xbox/PlayStation targets, keyboard keys, or system actions (such as taking screenshots).
-- **Rumble Support**: Forward vibration rumble effects to supported controllers (Steam Controllers) with adjustable intensity.
+- **USB:** Steam Controller devices use the project's dedicated Steam USB path. Other supported USB controllers are read through evdev.
+- **Bluetooth:** Supported paired Bluetooth gamepads can be selected through the app's Bluetooth transport.
+- **Virtual device injection:** The app tries the root backend first. Shizuku is used as a fallback when the root path is unavailable and Shizuku is configured.
+- **Hotplug and recovery:** The input pipeline monitors device changes and handles evdev synchronization loss.
+- **Calibration:** Stick calibration and sensitivity controls are available in the app.
+- **D-pad:** Standard buttons and supported evdev hat axes are mapped to the virtual D-pad.
 
----
+USB device discovery and auto-launch behavior can vary by Android version and device. The manifest's USB attachment filter currently targets Valve's Steam Controller; generic USB HID devices may need the app to be open so its runtime USB discovery can handle them.
 
 ## Requirements
 
-- **Android 8.0+** (API 26) — Phone, Tablet, or Android TV.
-- **[Shizuku](https://shizuku.rikka.app/)** installed and running (via Wireless ADB or one-time PC ADB connection).
-- Any paired **Bluetooth Controller** or **Steam Controller** (2026 Models Only) (USB OTG / BLE).
+- Android device with USB host support for wired controllers, or Bluetooth support for wireless controllers.
+- A supported physical controller.
+- For root injection: a device with working root access and kernel support for the required input interfaces.
+- For the fallback path: Shizuku installed, running and authorized.
 
----
+The availability of `/dev/uinput`, evdev device permissions, and related kernel features varies across Android devices. Root access alone does not guarantee that every backend will work.
 
-## Setup & Quick Start
+## Setup
 
-1. Install and start [Shizuku](https://shizuku.rikka.app/).
-2. Pair your Bluetooth gamepad in Android System Settings.
-3. Open this app and grant Shizuku and Notification permissions when prompted.
-4. Select **Bluetooth** on the Home tab, pick your controller (or **Any Connected Bluetooth Controller**), and choose your emulated controller profile (e.g. **Xbox 360**).
-5. Tap **Start Service**. The physical controller inputs will be grabbed exclusively and translated into your virtual Xbox 360 gamepad.
-6. Launch your game and enjoy native controller gameplay!
+1. Install the app.
+2. Connect or pair the physical controller.
+3. Open the app and choose USB or Bluetooth transport.
+4. Select the desired virtual profile: **Xbox** or **DualSense**. Use Desktop mode separately when mouse/keyboard navigation is desired.
+5. Start the controller service and check the app's connection/status log.
 
----
+If injection cannot start, check that the root backend is available or that Shizuku is running and authorized.
 
-## Roadmap & TODO
+## Development status
 
-- [x] **Bluetooth Detection**: Make Bluetooth peripherals discoverable and selectable in-app.
-- [x] **Generic HID Controller Support**: Route generic HID controllers to a system-wide virtual Xbox 360 gamepad.
-- [ ] **Advanced In-App Button & Axis Remapping**: Add an interactive manual mapping UI for controllers with non-standard physical button layouts or non-standard stick axis assignments.
-- [ ] **Bluetooth Device Filtering**: Filter the paired Bluetooth device list to display only gamepad/controller class peripherals.
-- [ ] **Gyro Aiming**: Route raw gyroscope data to DualShock 4 / DualSense motion controls for supported games.
+This project is under active development. CI builds verify that the Android project compiles, but CI does not test physical USB/Bluetooth controllers, root permissions, Shizuku injection on a real device, or compatibility with individual games.
 
----
+Please include the Android version, device model, controller model, connection type and relevant app logs when reporting a hardware compatibility issue.
 
 ## Credits
 
-- **[Shizuku](https://github.com/RikkaApps/Shizuku)** by RikkaApps — Provides rootless access to `/dev/uinput` via the `shell` UID.
-- **[SonicDX12/SteamController-Android](https://github.com/SonicDX12/SteamController-Android)** — The original repository from which this project was forked. Credit to SonicDX12 and contributors for developing the foundational Steam Controller driver, uinput service pipeline, and application architecture.
-- **Development & Testing**: Android Studio using Gemini 3.6 Flash for configuration and controller mappings (JNI/Evdev architecture).
-- **SteamlessController** by ddeverill & Linux `hid-steam` driver — Reference material for Valve Steam Controller HID report parsing.
-
----
-
-## License
-
-MIT — See [LICENSE](LICENSE).
+This project is a fork of [misakidebugged/Virtual-Xbox-Controller-Android](https://github.com/misakidebugged/Virtual-Xbox-Controller-Android). See the source repository and in-project license files for the original project's licensing and attribution.
