@@ -153,11 +153,12 @@ class UInputService : IUInputService.Stub {
         System.exit(0)
     }
 
-    override fun startEvdevReader(listener: com.virtualcontroller.android.ipc.IInputEventListener?, deviceAddressOrName: String?) {
-        try {
+    override fun startEvdevReader(listener: com.virtualcontroller.android.ipc.IInputEventListener?, deviceAddressOrName: String?): Boolean {
+        return try {
             UInputNative.startEvdevReader(listener, deviceAddressOrName ?: "ANY")
         } catch (t: Throwable) {
             Log.e(TAG, "startEvdevReader failed: ${t.message}")
+            false
         }
     }
 
