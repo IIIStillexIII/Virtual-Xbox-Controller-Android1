@@ -256,7 +256,7 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
         rumbleThread = null
     }
 
-    val isReady get() = deviceReady && (rootDeviceReady || service != null)
+    val isReady get() = deviceReady && if (rootDeviceReady) rootBackend.isReady else service != null
 
     /**
      * Swap the emulated controller profile without unbinding the user service.
