@@ -42,6 +42,7 @@ fun SettingsScreen(
     injectionBackend: InjectionBackend,
     onInjectionBackend: (InjectionBackend) -> Unit,
     serviceRunning: Boolean,
+    shizukuReady: Boolean,
     onOpen: (SubScreen) -> Unit,
     onGithub: () -> Unit,
     onCheckUpdates: () -> Unit,
@@ -94,6 +95,18 @@ fun SettingsScreen(
                 )
             },
         ))
+        Text(
+            when (injectionBackend) {
+                InjectionBackend.ROOT -> "Root access and /dev/uinput are checked when the controller starts."
+                InjectionBackend.SHIZUKU -> if (shizukuReady) {
+                    "Shizuku is running and this app is authorized."
+                } else {
+                    "Start Shizuku and grant this app permission before starting the controller."
+                }
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         if (serviceRunning) {
             Text(
                 "Stop the controller before changing the injection backend.",
