@@ -60,6 +60,7 @@
     <string name="calib_deadzone_label">Deadzone</string>
     <string name="calib_deadzone_lr_label">Deadzone L / R</string>
     <string name="calib_invert_y">Invert Y</string>
+    <string name="calib_invert_x">Invert X</string>
     <string name="calib_invert_l_y">Invert L Y</string>
     <string name="calib_invert_r_y">Invert R Y</string>
     <string name="calib_calibrate_all">Calibrate All</string>
