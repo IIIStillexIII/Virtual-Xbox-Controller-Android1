@@ -111,7 +111,7 @@ object Prefs {
     }
 
     fun getProfile(context: Context): GamepadProfile {
-        val id = prefs(context).getInt(KEY_PROFILE_ID, GamepadProfile.XBOX_360.id)
+        val id = prefs(context).getInt(KEY_PROFILE_ID, GamepadProfile.XBOX.id)
         return GamepadProfile.fromId(id)
     }
 
@@ -127,9 +127,9 @@ object Prefs {
 
     /** The last gamepad profile the user actively chose (defaults to Xbox 360). */
     fun getLastGamepadProfile(context: Context): GamepadProfile {
-        val id = prefs(context).getInt(KEY_LAST_GAMEPAD_PROFILE_ID, GamepadProfile.XBOX_360.id)
+        val id = prefs(context).getInt(KEY_LAST_GAMEPAD_PROFILE_ID, GamepadProfile.XBOX.id)
         val p = GamepadProfile.fromId(id)
-        return if (p.isMouseMode) GamepadProfile.XBOX_360 else p
+        return if (p.isMouseMode) GamepadProfile.XBOX else p
     }
 
     fun getTransport(context: Context): Transport =
