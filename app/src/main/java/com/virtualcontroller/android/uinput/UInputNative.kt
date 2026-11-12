@@ -23,6 +23,6 @@ object UInputNative {
     external fun sendMouseFrame(relX: Int, relY: Int, scrollY: Int, keys: Int)
     external fun destroy()
 
-    external fun startEvdevReader(listener: com.virtualcontroller.android.ipc.IInputEventListener?, deviceFilter: String?)
+    external fun startEvdevReader(listener: com.virtualcontroller.android.ipc.IInputEventListener?, deviceFilter: String?): Boolean
     external fun stopEvdevReader()
 }
