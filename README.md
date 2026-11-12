@@ -6,7 +6,7 @@ This is **my development fork**, not the original repository. The original upstr
 
 ## Project goal
 
-The goal of this fork is to keep the original Virtual Xbox Controller app and its overall design as close to upstream as practical, while improving it into a reliable system-wide controller bridge for Android. A generic physical gamepad connected over USB or Bluetooth should be mapped to one of exactly two virtual controller profiles — **Xbox Series X|S** or **PlayStation 5 DualSense** — so Android and games that support those controller input paths can recognize and use it as a gamepad. The app must also retain **Desktop mode**, use the **root backend first** with **Shizuku as a fallback**, and provide complete practical mapping for buttons, sticks, triggers and D-pad.
+The goal of this fork is to keep the original Virtual Xbox Controller app and its overall design as close to upstream as practical, while improving it into a reliable system-wide controller bridge for Android. A generic physical gamepad connected over USB or Bluetooth should be mapped to one of exactly two virtual controller profiles — **Xbox Series X|S** or **PlayStation 5 DualSense** — so Android and games that support those controller input paths can recognize and use it as a gamepad. The app must also retain **Desktop mode**, support a user-selectable **Root / Shizuku / Automatic** injection backend, and provide complete practical mapping for buttons, sticks, triggers and D-pad.
 
 ### Original project remains the foundation
 
@@ -69,7 +69,11 @@ In particular, virtual-controller operation does not guarantee that every game �
 
 - **USB:** Steam Controller devices use the project's dedicated Steam USB path. Other supported USB controllers are read through evdev.
 - **Bluetooth:** Supported paired Bluetooth gamepads can be selected through the app's Bluetooth transport.
-- **Virtual device injection:** The app tries the root backend first. Shizuku is used as a fallback when the root path is unavailable and Shizuku is configured.
+- **Injection backend:** The user must be able to choose **Root**, **Shizuku**, or **Automatic** in the existing Settings interface. Root uses the existing root-based injection path; Shizuku uses the existing Shizuku path. Automatic selects an available supported backend and clearly reports which one is active.
+- **Explicit selection:** Root or Shizuku selection must be respected. If the selected backend is unavailable or unauthorized, show a clear status and recovery guidance; do not silently switch to another backend.
+- **Shared pipeline:** Backend selection changes only how the virtual input device is created/managed. Both backends must feed the same existing controller mapping and virtual-profile pipeline; do not fork or duplicate the mapping engine.
+- **Permission and availability checks:** Check root availability or Shizuku connection/authorization before starting injection. Explain actionable recovery steps when access is missing.
+- **Persistence and status:** Remember the selected backend across app restarts and show the selected/active backend and its readiness in the existing UI.
 - **Hotplug and recovery:** The input pipeline monitors device changes and handles evdev synchronization loss.
 - **Calibration:** Stick calibration and sensitivity controls are available in the app.
 - **D-pad:** Standard buttons and supported evdev hat axes are mapped to the virtual D-pad.
@@ -80,20 +84,26 @@ USB device discovery and auto-launch behavior can vary by Android version and de
 
 - Android device with USB host support for wired controllers, or Bluetooth support for wireless controllers.
 - A supported physical controller.
-- For root injection: a device with working root access and kernel support for the required input interfaces.
-- For the fallback path: Shizuku installed, running and authorized.
-
-The availability of `/dev/uinput`, evdev device permissions, and related kernel features varies across Android devices. Root access alone does not guarantee that every backend will work.
+- For Root backend: working root access and kernel support for the required input interfaces.
+- For Shizuku backend: Shizuku installed, running and authorized.
+- For Automatic backend: at least one supported backend must be available.
+- The availability of `/dev/uinput`, evdev device permissions, and related kernel features varies across Android devices. Root access alone does not guarantee that every backend will work.
 
 ## Setup
 
 1. Install the app.
 2. Connect or pair the physical controller.
 3. Open the app and choose USB or Bluetooth transport.
-4. Select the desired virtual profile: **Xbox** or **DualSense**. Use Desktop mode separately when mouse/keyboard navigation is desired.
-5. Start the controller service and check the app's connection/status log.
+4. In the existing Settings section, choose the injection backend: **Root**, **Shizuku**, or **Automatic**.
+5. Check the backend readiness/status message. If Root or Shizuku is unavailable, follow the displayed recovery guidance or choose another backend manually.
+6. Select the desired virtual profile: **Xbox** or **DualSense**. Use Desktop mode separately when mouse/keyboard navigation is desired.
+7. Start the controller service and check the app's connection/status log.
 
-If injection cannot start, check that the root backend is available or that Shizuku is running and authorized.
+## UI and product consistency
+
+Backend selection belongs in the existing **Settings** area and must follow the original VXCA visual language and navigation. Do not create a duplicate settings screen, a separate backend-management app, or a second controller interface. Keep backend choice clearly separate from **Controller Mode** (Gamepad/Desktop) and from the virtual gamepad profile choice (Xbox Series X|S/DualSense).
+
+The selected backend is an implementation/permission choice, not a controller profile and not a Controller Mode. It must not change the user's selected virtual controller profile or Desktop behavior. Preserve existing screens and add only the smallest controls, status indicators, and permission guidance needed.
 
 ## Development status
 
