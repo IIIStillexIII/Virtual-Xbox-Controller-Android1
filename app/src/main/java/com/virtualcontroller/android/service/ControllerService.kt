@@ -399,7 +399,12 @@ class ControllerService : Service() {
             val filter = "VIDPID:${dev.vendorId.toString(16)}:${dev.productId.toString(16)}"
             Log.i(TAG, "Starting USB gamepad evdev reader: filter=$filter")
             activeEvdevUsbDevice = dev
-            uinput.startEvdevReader(inputEventListener, filter)
+            val started = uinput.startEvdevReader(inputEventListener, filter)
+            if (!started) {
+                Log.e(TAG, "USB evdev reader failed to initialize for $filter")
+                activeEvdevUsbDevice = null
+                return false
+            }
             return true
         }
 
@@ -444,8 +449,7 @@ class ControllerService : Service() {
 
         if (address == null || address == "ANY") {
             Log.i(TAG, "Starting Evdev reader for Any Bluetooth Controller")
-            uinput.startEvdevReader(inputEventListener, "ANY")
-            return true
+            return uinput.startEvdevReader(inputEventListener, "ANY")
         }
 
         val mgr = getSystemService(BluetoothManager::class.java)
@@ -478,7 +482,7 @@ class ControllerService : Service() {
             }
         } else {
             Log.i(TAG, "Starting Evdev reader for Bluetooth Controller (address=$address)")
-            uinput.startEvdevReader(inputEventListener, address)
+            return uinput.startEvdevReader(inputEventListener, address)
         }
 
         return true
