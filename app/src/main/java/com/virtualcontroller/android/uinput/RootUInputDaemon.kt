@@ -44,16 +44,22 @@ class RootUInputDaemon private constructor() {
                 LocalServerSocket(INPUT_SOCKET_NAME).use { inputServer ->
                     Thread({
                         try {
-                            inputServer.accept().use { inputClient ->
+                            while (true) {
+                                val inputClient = inputServer.accept()
                                 val peerUid = inputClient.peerCredentials.uid
-                                require(peerUid == expectedAppUid) {
-                                    "Rejected root input socket peer uid=$peerUid"
+                                if (peerUid != expectedAppUid) {
+                                    Log.w(TAG, "Rejected root input socket peer uid=$peerUid")
+                                    inputClient.close()
+                                    continue
                                 }
-                                val stream = DataOutputStream(inputClient.outputStream)
-                                inputOutput = stream
-                                stream.writeInt(MAGIC)
-                                stream.flush()
-                                while (true) Thread.sleep(1000)
+                                inputClient.use { client ->
+                                    val stream = DataOutputStream(client.outputStream)
+                                    inputOutput = stream
+                                    stream.writeInt(MAGIC)
+                                    stream.flush()
+                                    while (true) Thread.sleep(1000)
+                                }
+                                break
                             }
                         } catch (t: Throwable) {
                             Log.w(TAG, "Root input stream closed: " + t.message)
