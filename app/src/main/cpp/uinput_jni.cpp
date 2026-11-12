@@ -1032,11 +1032,14 @@ static void evdev_reader_thread_func() {
                     break;
                 }
             }
-            // A hat pair is a D-pad, not a second analog stick. Do not use
-            // ABS_HAT capabilities as evidence of a dual-stick gamepad.
-            const bool has_secondary_stick =
-                has_abs_code(ABS_RX) && has_abs_code(ABS_RY);
-            if (!has_gamepad_button && !(has_stick_pair && has_secondary_stick)) {
+            // This is only a candidate-device heuristic, not an axis mapping:
+            // some gamepads expose non-standard button codes but have a primary
+            // stick plus a hat D-pad. Keep those devices discoverable without
+            // treating the hat axes as a second analog stick.
+            const bool has_joystick_layout =
+                (has_abs_code(ABS_RX) && has_abs_code(ABS_RY)) ||
+                (selected_hat_x >= 0 && selected_hat_y >= 0);
+            if (!has_gamepad_button && !(has_stick_pair && has_joystick_layout)) {
                 close(fd);
                 continue;
             }
