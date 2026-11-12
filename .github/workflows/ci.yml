@@ -1,3 +1,4 @@
+# Build workflow; push to main starts an Android debug APK build.
 name: CI
 
 on:
