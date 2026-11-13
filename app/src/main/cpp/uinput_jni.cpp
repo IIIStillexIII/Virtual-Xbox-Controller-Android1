@@ -131,12 +131,18 @@ static int write_event(int fd, uint16_t type, uint16_t code, int32_t value) {
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_virtualcontroller_android_uinput_UInputNative_canOpen(JNIEnv*, jclass) {
-    int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
-    if (fd < 0) {
+    int uinput_fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
+    if (uinput_fd < 0) {
         LOGI("canOpen: /dev/uinput open denied: %s", strerror(errno));
         return JNI_FALSE;
     }
-    close(fd);
+    close(uinput_fd);
+    int uhid_fd = open("/dev/uhid", O_RDWR | O_CLOEXEC);
+    if (uhid_fd < 0) {
+        LOGI("canOpen: /dev/uhid open denied: %s", strerror(errno));
+        return JNI_FALSE;
+    }
+    close(uhid_fd);
     return JNI_TRUE;
 }
 
@@ -338,7 +344,7 @@ static void destroy_uhid_device() {
         struct uhid_event event{};
         event.type = UHID_DESTROY;
         if (write(g_uhid_fd, &event, sizeof(event)) != (ssize_t)sizeof(event))
-            LOGW("UHID_DESTROY write failed: %s", strerror(errno));
+            LOGE("UHID_DESTROY write failed: %s", strerror(errno));
         close(g_uhid_fd);
         g_uhid_fd = -1;
     }
