@@ -22,8 +22,8 @@ import com.virtualcontroller.android.parser.SteamControllerState
 import kotlin.math.abs
 import rikka.shizuku.Shizuku
 
-// High-level Kotlin API for the virtual Xbox 360 gamepad.
-// Binds UInputService through Shizuku and translates SC2026 state into Xbox events.
+// Existing VXCA output coordinator. It keeps the established input, mapping,
+// calibration, sidecar and backend flows while emitting the selected HID profile.
 class UInputGamepad(private val context: Context, initialProfile: GamepadProfile) {
 
     private val TAG = "UInputGamepad"
@@ -310,7 +310,7 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
         }
     }
 
-    // Push one HID frame from the SC2026 parser, translated to Xbox 360 layout.
+    // Push one normalized controller frame into the selected virtual HID profile.
     fun pushFrame(state: SteamControllerState) {
         if (rootDeviceReady && !rootBackend.isReady) {
             rootDeviceReady = false
