@@ -8,7 +8,7 @@ enum class GamepadProfile(
     val isMouseMode: Boolean = false
 ) {
     // Keep IDs 0 and 3 so existing saved settings continue to select the same profiles.
-    XBOX     (0, "xbox",     0x045E, 0x0B12),
+    XBOX     (0, "xbox",     0x045E, 0x0B13),
     DUALSENSE(3, "dualsense", 0x054C, 0x0CE6),
 
     // Internal legacy mode retained for compatibility with existing preferences.
