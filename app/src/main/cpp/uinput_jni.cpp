@@ -369,9 +369,27 @@ static void uhid_event_loop(int fd) {
             if (write(fd, &reply, sizeof(reply)) != (ssize_t)sizeof(reply))
                 LOGE("UHID_SET_REPORT_REPLY failed: %s", strerror(errno));
         } else if (event.type == UHID_OUTPUT) {
-            // Output/rumble routing is intentionally left for a later, separately
-            // verified enhancement; input recognition does not depend on it.
-            LOGI("UHID output report received (size=%u)", event.u.output.size);
+            const uint8_t* data = event.u.output.data;
+            const size_t size = event.u.output.size;
+            int left = 0;
+            int right = 0;
+            bool has_rumble = false;
+            if (g_uhid_profile_id == 0 && size >= 5 && data[0] == 0x03) {
+                // Xbox Wireless/Series output: enable, trigger motors, strong, weak.
+                left = (data[4] * 65535) / 100;
+                right = (size > 5 ? data[5] : 0) * 65535 / 100;
+                has_rumble = true;
+            } else if (g_uhid_profile_id == 3 && size >= 5 && data[0] == 0x02) {
+                // DualSense output report: left/right motor magnitudes at bytes 4/3.
+                left = data[4] * 65535 / 255;
+                right = data[3] * 65535 / 255;
+                has_rumble = true;
+            }
+            if (has_rumble) {
+                std::lock_guard<std::mutex> lock(g_uhid_write_mutex);
+                g_pending_strong = left;
+                g_pending_weak = right;
+            }
         }
     }
     g_uhid_running.store(false);
@@ -443,6 +461,8 @@ static bool create_uhid_device(const gamepad_profile* profile) {
 
     g_uhid_profile_id = profile->id;
     g_uhid_sequence = 0;
+    g_pending_strong = -1;
+    g_pending_weak = -1;
     g_uhid_running.store(true);
     try {
         g_uhid_thread = std::thread(uhid_event_loop, g_uhid_fd);
@@ -624,6 +644,20 @@ Java_com_virtualcontroller_android_uinput_UInputNative_sendFrame(
 //          or null if no rumble event is pending.
 extern "C" JNIEXPORT jintArray JNICALL
 Java_com_virtualcontroller_android_uinput_UInputNative_pollFFEvent(JNIEnv* env, jclass) {
+    if (g_uhid_fd >= 0) {
+        jint values[2];
+        {
+            std::lock_guard<std::mutex> lock(g_uhid_write_mutex);
+            if (g_pending_strong < 0) return nullptr;
+            values[0] = g_pending_strong;
+            values[1] = g_pending_weak;
+            g_pending_strong = -1;
+            g_pending_weak = -1;
+        }
+        jintArray result = env->NewIntArray(2);
+        if (result != nullptr) env->SetIntArrayRegion(result, 0, 2, values);
+        return result;
+    }
     if (g_fd_gamepad < 0) return nullptr;
 
     struct input_event ev;
