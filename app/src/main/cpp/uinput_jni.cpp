@@ -283,6 +283,25 @@ static const uint8_t HID_DUALSENSE_DESCRIPTOR[] = {
     0x09, 0x26, 0x75, 0x08, 0x95, 0x3f, 0xb1, 0x02, 0xc0
 };
 
+static const uint8_t HID_SONY_CALIBRATION[] = {
+    0x05, 0x1e, 0x00, 0x05, 0x00, 0xe2, 0xff, 0xf2, 0x22, 0xbe, 0x22, 0x8d,
+    0x22, 0x4f, 0xdd, 0x4d, 0xdd, 0x39, 0xdd, 0x1c, 0x02, 0x1c, 0x02, 0xe3,
+    0x1f, 0x8b, 0xdf, 0x8c, 0x1e, 0xb4, 0xde, 0x30, 0x20, 0x71, 0xe0, 0x10,
+    0x00, 0xca, 0xfc, 0x64, 0x4d
+};
+static const uint8_t HID_DUALSENSE_PAIRING_INFO[] = {
+    0x09, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x08, 0x25, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+static const uint8_t HID_DUALSENSE_FIRMWARE_INFO[] = {
+    0x20, 0x4a, 0x75, 0x00, 0x02, 0x00, 0x0b, 0x00, 0x01, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00
+};
+
 static std::mutex g_uhid_write_mutex;
 static std::atomic<bool> g_uhid_running{false};
 static std::thread g_uhid_thread;
@@ -315,12 +334,29 @@ static void uhid_event_loop(int fd) {
             break;
         }
         if (event.type == UHID_GET_REPORT) {
-            // These profiles expose standard input reports only. Do not leave the
-            // kernel waiting for an unsupported feature report.
             struct uhid_event reply{};
             reply.type = UHID_GET_REPORT_REPLY;
             reply.u.get_report_reply.id = event.u.get_report.id;
-            reply.u.get_report_reply.err = EOPNOTSUPP;
+            const uint8_t* feature = nullptr;
+            size_t feature_size = 0;
+            // Reuse NeuroPad's static DualSense feature payloads. The Sony-specific
+            // identity string remains empty, as in NeuroPad, to avoid binding the
+            // kernel's Sony transport driver to an incomplete virtual implementation.
+            if (g_uhid_profile_id == 3 && event.u.get_report.rtype == 3) {
+                switch (event.u.get_report.rnum) {
+                    case 0x05: feature = HID_SONY_CALIBRATION; feature_size = sizeof(HID_SONY_CALIBRATION); break;
+                    case 0x09: feature = HID_DUALSENSE_PAIRING_INFO; feature_size = sizeof(HID_DUALSENSE_PAIRING_INFO); break;
+                    case 0x20: feature = HID_DUALSENSE_FIRMWARE_INFO; feature_size = sizeof(HID_DUALSENSE_FIRMWARE_INFO); break;
+                    default: break;
+                }
+            }
+            if (feature != nullptr && feature_size <= sizeof(reply.u.get_report_reply.data)) {
+                reply.u.get_report_reply.err = 0;
+                reply.u.get_report_reply.size = (uint16_t)feature_size;
+                memcpy(reply.u.get_report_reply.data, feature, feature_size);
+            } else {
+                reply.u.get_report_reply.err = EOPNOTSUPP;
+            }
             std::lock_guard<std::mutex> lock(g_uhid_write_mutex);
             if (write(fd, &reply, sizeof(reply)) != (ssize_t)sizeof(reply))
                 LOGE("UHID_GET_REPORT_REPLY failed: %s", strerror(errno));
@@ -441,7 +477,7 @@ static void send_uhid_frame(int buttons, int lx, int ly, int rx, int ry,
                             int lt, int rt, int dpadX, int dpadY) {
     std::lock_guard<std::mutex> lock(g_uhid_write_mutex);
     if (g_uhid_fd < 0) return;
-    uint8_t report[64]{};
+    uint8_t report[65]{};
     if (g_uhid_profile_id == 0) {
         report[0] = 0x01;
         report[1] = axis_to_u8(lx);
@@ -491,7 +527,7 @@ static void send_uhid_frame(int buttons, int lx, int ly, int rx, int ry,
 
     struct uhid_event event{};
     event.type = UHID_INPUT;
-    event.u.input.size = g_uhid_profile_id == 0 ? 16 : 64;
+    event.u.input.size = g_uhid_profile_id == 0 ? 16 : 65;
     memcpy(event.u.input.data, report, event.u.input.size);
     if (write(g_uhid_fd, &event, sizeof(event)) != (ssize_t)sizeof(event))
         LOGE("UHID_INPUT write failed: %s", strerror(errno));
