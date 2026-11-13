@@ -530,7 +530,7 @@ class ControllerService : Service() {
             }
             if (uinput.isReady) {
                 setMode(InjectionMode.UINPUT)
-                Log.i(TAG, "Using ${selectedBackend.displayName} uinput virtual gamepad (${Prefs.getProfile(this@ControllerService).displayName})")
+                Log.i(TAG, "Using ${selectedBackend.displayName} UHID virtual gamepad (${Prefs.getProfile(this@ControllerService).displayName})")
                 return
             }
             Log.w(TAG, "Selected ${selectedBackend.displayName} uinput backend did not become ready")
@@ -542,7 +542,7 @@ class ControllerService : Service() {
 
         if (selectedBackend == InjectionBackend.SHIZUKU && legacyInjector.init()) {
             setMode(InjectionMode.SHIZUKU_INJECT)
-            Log.w(TAG, "Using legacy Shizuku injectInputEvent fallback; this is not a virtual uinput gamepad and may be filtered by games")
+            Log.w(TAG, "Using legacy Shizuku injectInputEvent fallback; this is not a virtual HID gamepad and may be filtered by games")
         } else {
             setMode(InjectionMode.NONE)
             Log.e(TAG, "Selected backend unavailable; no automatic switch to another backend was performed")
@@ -562,7 +562,7 @@ class ControllerService : Service() {
 
     /**
      * Triggered by the notification action: cycle between the two supported gamepad profiles (xbox and dualsense).
-     * Only meaningful in uinput mode; in fallback inject mode the profile is ignored.
+     * Only meaningful in virtual HID mode; in fallback inject mode the profile is ignored.
      */
     // Guards against re-entrant taps on the "Switch profile" notification action while
     // a previous switch is still tearing down / recreating uinput devices.
@@ -758,7 +758,7 @@ class ControllerService : Service() {
             stopIntent
         ).build()
 
-        // "Switch profile" action: cycles to the next emulated controller (only useful in uinput mode).
+        // "Switch profile" action: cycles to the next emulated controller (only useful in virtual HID mode).
         val nextProfileIntent = PendingIntent.getService(
             this, 2,
             Intent(this, ControllerService::class.java).apply { action = ACTION_NEXT_PROFILE },
