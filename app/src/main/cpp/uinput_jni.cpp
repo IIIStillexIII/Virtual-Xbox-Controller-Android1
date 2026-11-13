@@ -5,6 +5,7 @@
 #include <jni.h>
 #include <android/log.h>
 #include <linux/uinput.h>
+#include <linux/uhid.h>
 #include <linux/input.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -15,6 +16,7 @@
 #include <time.h>
 #include <dirent.h>
 #include <atomic>
+#include <mutex>
 #include <thread>
 #include <vector>
 #include <string>
@@ -37,7 +39,7 @@ struct gamepad_profile {
 };
 
 static const gamepad_profile PROFILES[] = {
-    { 0, 0x045E, 0x0B12, "Virtual Xbox Controller",                                           false }, // Xbox Series X|S profile
+    { 0, 0x045E, 0x0B13, "Xbox Wireless Controller",                                           false }, // Xbox Series X|S profile
     { 3, 0x054C, 0x0CE6, "Virtual DualSense Controller",                                       false }, // PS5 DualSense profile
     { 4, 0x046D, 0xC077, "Steam Controller Desktop",                                          true  }, // Internal legacy mouse mode (not exposed in UI)
 };
@@ -243,8 +245,250 @@ fail:
     return -1;
 }
 
+
+// HID report descriptors adapted from NeuroPad's MIT-licensed HID implementation.
+// Only the two VXCA-supported profiles are retained here.
+static const uint8_t HID_XBOX_SERIES_DESCRIPTOR[] = {
+    0x05, 0x01, 0x09, 0x05, 0xa1, 0x01, 0x85, 0x01, 0x09, 0x01, 0xa1, 0x00, 0x09, 0x30, 0x09, 0x31, 0x09
+    0x33, 0x09, 0x34, 0x15, 0x00, 0x26, 0xff, 0x00, 0x75, 0x08, 0x95, 0x04, 0x81, 0x02, 0xc0, 0x05, 0x02
+    0x09, 0xc5, 0x09, 0xc4, 0x15, 0x00, 0x26, 0xff, 0x00, 0x75, 0x08, 0x95, 0x02, 0x81, 0x02, 0x05, 0x01
+    0x09, 0x39, 0x15, 0x00, 0x25, 0x07, 0x35, 0x00, 0x46, 0x3b, 0x01, 0x65, 0x14, 0x75, 0x04, 0x95, 0x01
+    0x81, 0x42, 0x75, 0x04, 0x95, 0x01, 0x81, 0x03, 0x05, 0x09, 0x19, 0x01, 0x29, 0x10, 0x15, 0x00, 0x25
+    0x01, 0x75, 0x01, 0x95, 0x10, 0x81, 0x02, 0x85, 0x03, 0x06, 0x00, 0xff, 0x09, 0x01, 0x15, 0x00, 0x26
+    0xff, 0x00, 0x75, 0x08, 0x95, 0x04, 0x91, 0x02
+    0xc0
+};
+
+static const uint8_t HID_DUALSENSE_DESCRIPTOR[] = {
+    0x05, 0x01, 0x09, 0x05, 0xa1, 0x01, 0x85, 0x01, 0x09, 0x30, 0x09, 0x31, 0x09, 0x32, 0x09, 0x35, 0x15
+    0x00, 0x26, 0xff, 0x00, 0x75, 0x08, 0x95, 0x04, 0x81, 0x02, 0x09, 0x33, 0x09, 0x34, 0x15, 0x00, 0x26
+    0xff, 0x00, 0x75, 0x08, 0x95, 0x02, 0x81, 0x02, 0x09, 0x37, 0x15, 0x00, 0x26, 0xff, 0x00, 0x75, 0x08
+    0x95, 0x01, 0x81, 0x02, 0x09, 0x39, 0x15, 0x00, 0x25, 0x07, 0x35, 0x00, 0x46, 0x3b, 0x01, 0x65, 0x14
+    0x75, 0x04, 0x95, 0x01, 0x81, 0x42, 0x05, 0x09, 0x19, 0x01, 0x29, 0x0e, 0x15, 0x00, 0x25, 0x01, 0x75
+    0x01, 0x95, 0x0e, 0x81, 0x02, 0x75, 0x01, 0x95, 0x06, 0x81, 0x03, 0x06, 0x00, 0xff, 0x09, 0x21, 0x15
+    0x00, 0x26, 0xff, 0x00, 0x75, 0x08, 0x95, 0x35, 0x81, 0x02, 0x85, 0x02, 0x09, 0x22, 0x75, 0x08, 0x95
+    0x3e, 0x91, 0x02, 0x85, 0x05, 0x09, 0x23, 0x75, 0x08, 0x95, 0x28, 0xb1, 0x02, 0x85, 0x09, 0x09, 0x25
+    0x75, 0x08, 0x95, 0x13, 0xb1, 0x02, 0x85, 0x20, 0x09, 0x26, 0x75, 0x08, 0x95, 0x3f, 0xb1, 0x02
+    0xc0
+};
+
+static std::mutex g_uhid_write_mutex;
+static std::atomic<bool> g_uhid_running{false};
+static std::thread g_uhid_thread;
+static int g_uhid_fd = -1;
+static int g_uhid_profile_id = 0;
+static uint8_t g_uhid_sequence = 0;
+
+static void uhid_event_loop(int fd) {
+    while (g_uhid_running.load()) {
+        struct pollfd pfd{};
+        pfd.fd = fd;
+        pfd.events = POLLIN;
+        const int ready = poll(&pfd, 1, 100);
+        if (ready < 0) {
+            if (errno == EINTR) continue;
+            LOGE("UHID poll failed: %s", strerror(errno));
+            break;
+        }
+        if (ready == 0) continue;
+        if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+            LOGE("UHID device stream closed (revents=0x%x)", pfd.revents);
+            break;
+        }
+        if (!(pfd.revents & POLLIN)) continue;
+        struct uhid_event event{};
+        const ssize_t n = read(fd, &event, sizeof(event));
+        if (n < 0 && (errno == EINTR || errno == EAGAIN)) continue;
+        if (n != (ssize_t)sizeof(event)) {
+            if (n >= 0) LOGE("Short UHID event read: %zd", n);
+            break;
+        }
+        if (event.type == UHID_GET_REPORT) {
+            // These profiles expose standard input reports only. Do not leave the
+            // kernel waiting for an unsupported feature report.
+            struct uhid_event reply{};
+            reply.type = UHID_GET_REPORT_REPLY;
+            reply.u.get_report_reply.id = event.u.get_report.id;
+            reply.u.get_report_reply.err = EOPNOTSUPP;
+            std::lock_guard<std::mutex> lock(g_uhid_write_mutex);
+            if (write(fd, &reply, sizeof(reply)) != (ssize_t)sizeof(reply))
+                LOGE("UHID_GET_REPORT_REPLY failed: %s", strerror(errno));
+        } else if (event.type == UHID_SET_REPORT) {
+            struct uhid_event reply{};
+            reply.type = UHID_SET_REPORT_REPLY;
+            reply.u.set_report_reply.id = event.u.set_report.id;
+            reply.u.set_report_reply.err = 0;
+            std::lock_guard<std::mutex> lock(g_uhid_write_mutex);
+            if (write(fd, &reply, sizeof(reply)) != (ssize_t)sizeof(reply))
+                LOGE("UHID_SET_REPORT_REPLY failed: %s", strerror(errno));
+        } else if (event.type == UHID_OUTPUT) {
+            // Output/rumble routing is intentionally left for a later, separately
+            // verified enhancement; input recognition does not depend on it.
+            LOGI("UHID output report received (size=%u)", event.u.output.size);
+        }
+    }
+    g_uhid_running.store(false);
+}
+
+static void destroy_uhid_device() {
+    g_uhid_running.store(false);
+    if (g_uhid_thread.joinable()) g_uhid_thread.join();
+    std::lock_guard<std::mutex> lock(g_uhid_write_mutex);
+    if (g_uhid_fd >= 0) {
+        struct uhid_event event{};
+        event.type = UHID_DESTROY;
+        if (write(g_uhid_fd, &event, sizeof(event)) != (ssize_t)sizeof(event))
+            LOGW("UHID_DESTROY write failed: %s", strerror(errno));
+        close(g_uhid_fd);
+        g_uhid_fd = -1;
+    }
+    g_uhid_profile_id = 0;
+    g_uhid_sequence = 0;
+}
+
+static bool create_uhid_device(const gamepad_profile* profile) {
+    destroy_uhid_device();
+    const bool xbox = profile->id == 0;
+    const uint8_t* descriptor = xbox ? HID_XBOX_SERIES_DESCRIPTOR : HID_DUALSENSE_DESCRIPTOR;
+    const size_t descriptor_size = xbox ? sizeof(HID_XBOX_SERIES_DESCRIPTOR) : sizeof(HID_DUALSENSE_DESCRIPTOR);
+    if (descriptor_size > HID_MAX_DESCRIPTOR_SIZE) {
+        LOGE("UHID descriptor too large: %zu", descriptor_size);
+        return false;
+    }
+
+    g_uhid_fd = open("/dev/uhid", O_RDWR | O_CLOEXEC);
+    if (g_uhid_fd < 0) {
+        LOGE("open /dev/uhid failed: %s", strerror(errno));
+        return false;
+    }
+
+    uint8_t patched[HID_MAX_DESCRIPTOR_SIZE]{};
+    memcpy(patched, descriptor, descriptor_size);
+    if (xbox) {
+        // NeuroPad's Android compatibility adjustment: advertise the right stick
+        // on Z/Rz and preserve the Xbox Bluetooth trigger usages.
+        for (size_t i = 0; i + 7 < descriptor_size; ++i) {
+            if (patched[i] == 0x09 && patched[i + 1] == 0x30 &&
+                patched[i + 2] == 0x09 && patched[i + 3] == 0x31 &&
+                patched[i + 4] == 0x09 && patched[i + 5] == 0x33 &&
+                patched[i + 6] == 0x09 && patched[i + 7] == 0x34) {
+                patched[i + 5] = 0x32;
+                patched[i + 7] = 0x35;
+                break;
+            }
+        }
+    }
+
+    struct uhid_event event{};
+    event.type = UHID_CREATE2;
+    strncpy((char*)event.u.create2.name, profile->name, sizeof(event.u.create2.name) - 1);
+    event.u.create2.rd_size = (uint16_t)descriptor_size;
+    event.u.create2.bus = xbox ? BUS_BLUETOOTH : BUS_USB;
+    event.u.create2.vendor = profile->vid;
+    event.u.create2.product = profile->pid;
+    memcpy(event.u.create2.rd_data, patched, descriptor_size);
+    if (write(g_uhid_fd, &event, sizeof(event)) != (ssize_t)sizeof(event)) {
+        LOGE("UHID_CREATE2 failed: %s", strerror(errno));
+        close(g_uhid_fd);
+        g_uhid_fd = -1;
+        return false;
+    }
+
+    g_uhid_profile_id = profile->id;
+    g_uhid_sequence = 0;
+    g_uhid_running.store(true);
+    try {
+        g_uhid_thread = std::thread(uhid_event_loop, g_uhid_fd);
+    } catch (...) {
+        LOGE("Could not start UHID event worker");
+        destroy_uhid_device();
+        return false;
+    }
+    LOGI("UHID device created: %s VID=%04x PID=%04x BUS=%s descriptor=%zu",
+         profile->name, profile->vid, profile->pid, xbox ? "Bluetooth" : "USB", descriptor_size);
+    return true;
+}
+
+static uint8_t axis_to_u8(int value) {
+    const int clamped = std::max(-32768, std::min(32767, value));
+    return (uint8_t)(((clamped + 32768) * 255 + 32767) / 65535);
+}
+
+static uint8_t dpad_to_hat(int x, int y) {
+    if (x == 0 && y == 0) return 8;
+    if (x == 0 && y < 0) return 0;
+    if (x > 0 && y < 0) return 1;
+    if (x > 0 && y == 0) return 2;
+    if (x > 0 && y > 0) return 3;
+    if (x == 0 && y > 0) return 4;
+    if (x < 0 && y > 0) return 5;
+    if (x < 0 && y == 0) return 6;
+    return 7;
+}
+
+static void send_uhid_frame(int buttons, int lx, int ly, int rx, int ry,
+                            int lt, int rt, int dpadX, int dpadY) {
+    std::lock_guard<std::mutex> lock(g_uhid_write_mutex);
+    if (g_uhid_fd < 0) return;
+    uint8_t report[64]{};
+    if (g_uhid_profile_id == 0) {
+        report[0] = 0x01;
+        report[1] = axis_to_u8(lx);
+        report[2] = axis_to_u8(ly);
+        report[3] = axis_to_u8(rx);
+        report[4] = axis_to_u8(ry);
+        report[5] = (uint8_t)std::max(0, std::min(255, lt));
+        report[6] = (uint8_t)std::max(0, std::min(255, rt));
+        report[7] = dpad_to_hat(dpadX, dpadY);
+        // HID button positions from NeuroPad's Xbox Wireless/Series report builder.
+        report[8] = ((buttons >> 0) & 1) << 0 |
+                    ((buttons >> 1) & 1) << 1 |
+                    ((buttons >> 2) & 1) << 3 |
+                    ((buttons >> 3) & 1) << 4 |
+                    ((buttons >> 4) & 1) << 6 |
+                    ((buttons >> 5) & 1) << 7;
+        report[9] = ((buttons >> 6) & 1) << 2 |
+                    ((buttons >> 7) & 1) << 3 |
+                    ((buttons >> 8) & 1) << 4 |
+                    ((buttons >> 9) & 1) << 5 |
+                    ((buttons >> 10) & 1) << 6;
+        // Xbox Bluetooth kernel drivers expect a 16-byte input packet.
+    } else {
+        report[0] = 0x01;
+        report[1] = axis_to_u8(lx);
+        report[2] = axis_to_u8(ly);
+        report[3] = axis_to_u8(rx);
+        report[4] = axis_to_u8(ry);
+        report[5] = (uint8_t)std::max(0, std::min(255, lt));
+        report[6] = (uint8_t)std::max(0, std::min(255, rt));
+        report[7] = g_uhid_sequence++;
+        report[8] = dpad_to_hat(dpadX, dpadY) |
+                    (((buttons >> 2) & 1) << 4) |
+                    (((buttons >> 0) & 1) << 5) |
+                    (((buttons >> 1) & 1) << 6) |
+                    (((buttons >> 3) & 1) << 7);
+        report[9] = ((buttons >> 4) & 1) << 0 |
+                    ((buttons >> 5) & 1) << 1 |
+                    (lt > 0 ? 1 : 0) << 2 |
+                    (rt > 0 ? 1 : 0) << 3 |
+                    ((buttons >> 6) & 1) << 4 |
+                    ((buttons >> 7) & 1) << 5 |
+                    ((buttons >> 9) & 1) << 6 |
+                    ((buttons >> 10) & 1) << 7;
+        report[10] = ((buttons >> 8) & 1);
+    }
+
+    struct uhid_event event{};
+    event.type = UHID_INPUT;
+    event.u.input.size = g_uhid_profile_id == 0 ? 16 : 64;
+    memcpy(event.u.input.data, report, event.u.input.size);
+    if (write(g_uhid_fd, &event, sizeof(event)) != (ssize_t)sizeof(event))
+        LOGE("UHID_INPUT write failed: %s", strerror(errno));
+}
+
 static void destroy_devices() {
-    bool destroyed = false;
+    bool destroyed = g_uhid_fd >= 0;
+    destroy_uhid_device();
     if (g_fd_gamepad >= 0) {
         ioctl(g_fd_gamepad, UI_DEV_DESTROY);
         close(g_fd_gamepad);
@@ -301,81 +545,18 @@ Java_com_virtualcontroller_android_uinput_UInputNative_createDevice(JNIEnv*, jcl
         return JNI_TRUE;
     }
 
-    // Gamepad path — gamepad device + sidecar mouse + sidecar keyboard.
-    // The sidecar pair lets the right trackpad drive a cursor and lets back-paddle
-    // mappings hit keyboard keys, while games still see a proper gamepad.
-    int fd = open("/dev/uinput", O_RDWR | O_NONBLOCK);
-    if (fd < 0) {
-        LOGE("open /dev/uinput failed: %s", strerror(errno));
-        return JNI_FALSE;
-    }
+    // Gamepad path — native HID via /dev/uhid plus the existing optional sidecars.
+    // This reuses VXCA's current normalized input state, calibration and mapping path.
+    if (!create_uhid_device(prof)) return JNI_FALSE;
 
-    if (set_bit_or_log(fd, UI_SET_EVBIT, EV_KEY, "EV_KEY") < 0) goto fail;
-    if (set_bit_or_log(fd, UI_SET_EVBIT, EV_ABS, "EV_ABS") < 0) goto fail;
-    if (set_bit_or_log(fd, UI_SET_EVBIT, EV_SYN, "EV_SYN") < 0) goto fail;
-    if (set_bit_or_log(fd, UI_SET_EVBIT, EV_FF,  "EV_FF")  < 0) goto fail;
-
-    if (set_bit_or_log(fd, UI_SET_FFBIT, FF_RUMBLE,   "FF_RUMBLE")   < 0) goto fail;
-    if (set_bit_or_log(fd, UI_SET_FFBIT, FF_PERIODIC, "FF_PERIODIC") < 0) goto fail;
-
-    {
-        // Advertise the exact face-button keycodes that sendFrame() will emit.
-        // Android's DualSense key layout expects Square=BTN_WEST and
-        // Triangle=BTN_NORTH; declaring BTN_X/BTN_Y instead would leave those
-        // emitted events outside the device's advertised capabilities.
-        const int face_btns[] = {
-            BTN_A, BTN_B,
-            prof->id == 3 ? BTN_WEST : BTN_X,
-            prof->id == 3 ? BTN_NORTH : BTN_Y
-        };
-        for (int b : face_btns) {
-            if (set_bit_or_log(fd, UI_SET_KEYBIT, b, "face KEY") < 0) goto fail;
-        }
-
-        const int other_btns[] = {
-            BTN_TL, BTN_TR,
-            BTN_SELECT, BTN_START, BTN_MODE,
-            BTN_THUMBL, BTN_THUMBR
-        };
-        for (int b : other_btns) {
-            if (set_bit_or_log(fd, UI_SET_KEYBIT, b, "KEY") < 0) goto fail;
-        }
-    }
-
-    if (setup_abs(fd, ABS_X,        STICK_MIN, STICK_MAX, 16, 128) < 0) goto fail;
-    if (setup_abs(fd, ABS_Y,        STICK_MIN, STICK_MAX, 16, 128) < 0) goto fail;
-    if (setup_abs(fd, ABS_RX,       STICK_MIN, STICK_MAX, 16, 128) < 0) goto fail;
-    if (setup_abs(fd, ABS_RY,       STICK_MIN, STICK_MAX, 16, 128) < 0) goto fail;
-    if (setup_abs(fd, ABS_Z,        TRIG_MIN,  TRIG_MAX,   0,   0) < 0) goto fail;
-    if (setup_abs(fd, ABS_RZ,       TRIG_MIN,  TRIG_MAX,   0,   0) < 0) goto fail;
-    if (setup_abs(fd, ABS_HAT0X,    HAT_MIN,   HAT_MAX,    0,   0) < 0) goto fail;
-    if (setup_abs(fd, ABS_HAT0Y,    HAT_MIN,   HAT_MAX,    0,   0) < 0) goto fail;
-
-    if (finalize_device(fd, prof->vid, prof->pid, prof->name, MAX_FF_EFFECTS) < 0) goto fail;
-
-    memset(g_ff_effects, 0, sizeof(g_ff_effects));
-    g_pending_strong = -1;
-    g_pending_weak   = -1;
-
-    LOGI("Virtual gamepad created (profile=%d), fd=%d", prof->id, fd);
-    g_fd_gamepad = fd;
-    g_active_profile_id = prof->id;
-
-    // Sidecar mouse + keyboard — non-fatal if either fails (gamepad still works).
     g_fd_mouse = create_mouse_fd(prof->vid, (uint16_t)(prof->pid + 0x100));
-    if (g_fd_mouse < 0) {
+    if (g_fd_mouse < 0)
         LOGE("Sidecar mouse creation failed — trackpad-as-cursor will be unavailable");
-    }
     g_fd_kbd = create_keyboard_fd(prof->vid, (uint16_t)(prof->pid + 0x200), /*full_alpha=*/false);
-    if (g_fd_kbd < 0) {
+    if (g_fd_kbd < 0)
         LOGE("Sidecar keyboard creation failed — key mappings on back paddles will be unavailable");
-    }
-    LOGI("Gamepad devices ready — gamepad=%d, mouse=%d, kbd=%d", g_fd_gamepad, g_fd_mouse, g_fd_kbd);
+    LOGI("Virtual HID gamepad ready — UHID fd=%d, mouse=%d, kbd=%d", g_uhid_fd, g_fd_mouse, g_fd_kbd);
     return JNI_TRUE;
-
-fail:
-    close(fd);
-    return JNI_FALSE;
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -385,37 +566,7 @@ Java_com_virtualcontroller_android_uinput_UInputNative_sendFrame(
         jint lx, jint ly, jint rx, jint ry,
         jint lt, jint rt,
         jint dpadX, jint dpadY) {
-    if (g_fd_gamepad < 0) return;
-
-    // Bit-to-keycode pairs — order must match XboxDescriptor.kt bit positions.
-    // bit 0 = A, 1 = B, 2 = X, 3 = Y, 4 = LB, 5 = RB,
-    // 6 = SELECT, 7 = START, 8 = MODE, 9 = THUMBL, 10 = THUMBR
-    const int bit_to_key[] = {
-        BTN_A, BTN_B,
-        // Android's DualSense key layout maps Square to BTN_WEST and
-        // Triangle to BTN_NORTH; Xbox uses the opposite Linux X/Y names.
-        g_active_profile_id == 3 ? BTN_WEST : BTN_X,
-        g_active_profile_id == 3 ? BTN_NORTH : BTN_Y,
-        BTN_TL, BTN_TR,
-        BTN_SELECT, BTN_START, BTN_MODE,
-        BTN_THUMBL, BTN_THUMBR
-    };
-    const int n = sizeof(bit_to_key) / sizeof(bit_to_key[0]);
-    for (int i = 0; i < n; i++) {
-        int pressed = (buttons >> i) & 1;
-        write_event(g_fd_gamepad, EV_KEY, bit_to_key[i], pressed);
-    }
-
-    write_event(g_fd_gamepad, EV_ABS, ABS_X,     lx);
-    write_event(g_fd_gamepad, EV_ABS, ABS_Y,     ly);
-    write_event(g_fd_gamepad, EV_ABS, ABS_RX,    rx);
-    write_event(g_fd_gamepad, EV_ABS, ABS_RY,    ry);
-    write_event(g_fd_gamepad, EV_ABS, ABS_Z,     lt);
-    write_event(g_fd_gamepad, EV_ABS, ABS_RZ,    rt);
-    write_event(g_fd_gamepad, EV_ABS, ABS_HAT0X, dpadX);
-    write_event(g_fd_gamepad, EV_ABS, ABS_HAT0Y, dpadY);
-
-    write_event(g_fd_gamepad, EV_SYN, SYN_REPORT, 0);
+    send_uhid_frame(buttons, lx, ly, rx, ry, lt, rt, dpadX, dpadY);
 }
 
 // Drain any pending events from the uinput fd. We care about:
