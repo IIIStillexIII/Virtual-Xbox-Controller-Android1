@@ -33,6 +33,16 @@ enum class Transport(val id: Int, val displayName: String) {
     }
 }
 
+/** Privileged path used to create and manage the system virtual input device. */
+enum class InjectionBackend(val id: Int, val displayName: String) {
+    ROOT(0, "Root"),
+    SHIZUKU(1, "Shizuku");
+
+    companion object {
+        fun fromId(id: Int) = entries.firstOrNull { it.id == id } ?: ROOT
+    }
+}
+
 object Prefs {
     private const val NAME = "steam_controller_prefs"
     private const val KEY_PROFILE_ID = "gamepad_profile_id"
@@ -57,6 +67,7 @@ object Prefs {
     private const val KEY_ACTIVE_NAMED_PROFILE_ID = "active_named_profile_id"
     private const val KEY_THEME_MODE = "theme_mode"
     private const val KEY_AUTO_LAUNCH = "auto_launch"
+    private const val KEY_INJECTION_BACKEND = "injection_backend"
     private const val KEY_LAST_UPDATE_CHECK = "last_update_check_at"
     private const val KEY_SKIPPED_UPDATE_VERSION = "skipped_update_version"
     private const val KEY_SAVED_SHOW_IME_HARD_KB = "saved_show_ime_with_hard_keyboard"
@@ -101,6 +112,13 @@ object Prefs {
 
     fun setAutoLaunch(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_AUTO_LAUNCH, enabled).apply()
+    }
+
+    fun getInjectionBackend(context: Context): InjectionBackend =
+        InjectionBackend.fromId(prefs(context).getInt(KEY_INJECTION_BACKEND, InjectionBackend.ROOT.id))
+
+    fun setInjectionBackend(context: Context, backend: InjectionBackend) {
+        prefs(context).edit().putInt(KEY_INJECTION_BACKEND, backend.id).apply()
     }
 
     fun getThemeMode(context: Context): ThemeMode =

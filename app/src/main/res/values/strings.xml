@@ -6,6 +6,8 @@
     <string name="status_running">Controller active</string>
     <string name="shizuku_not_running">Shizuku is not running. Please start Shizuku first.</string>
     <string name="shizuku_permission_denied">Shizuku permission denied.</string>
+    <string name="root_backend_unavailable">Root access was denied or /dev/uinput is unavailable. Grant root access to the app and try again.</string>
+    <string name="shizuku_backend_unavailable">Shizuku could not create a virtual device. Check that Shizuku is running and this app is authorized.</string>
     <string name="btn_start">Start Service</string>
     <string name="theme_dynamic_unavailable">Dynamic colour needs Android 12 or newer.</string>
     <string name="btn_stop">Stop Service</string>
@@ -37,7 +39,7 @@
     <string name="main_mode_gamepad">Gamepad</string>
     <string name="main_mode_desktop">Desktop</string>
     <string name="main_emulated_controller_label">Emulated controller</string>
-    <string name="main_gamepad_xbox360">Xbox 360</string>
+    <string name="main_gamepad_xbox360">Xbox Series X|S</string>
     <string name="main_gamepad_xboxone">Xbox One</string>
     <string name="main_gamepad_ds4">DualShock 4</string>
     <string name="main_gamepad_dualsense">DualSense</string>

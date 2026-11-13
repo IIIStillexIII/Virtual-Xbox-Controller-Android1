@@ -8,6 +8,7 @@ import android.content.ServiceConnection
 import android.os.IBinder
 import android.util.Log
 import com.virtualcontroller.android.Prefs
+import com.virtualcontroller.android.InjectionBackend
 import com.virtualcontroller.android.input.DEFAULT_MOUSE_MAPPING
 import com.virtualcontroller.android.input.MOUSE_LEFT_PAD_CLICK_BIT
 import com.virtualcontroller.android.input.MOUSE_MODE_FIXED_DPAD
@@ -21,8 +22,8 @@ import com.virtualcontroller.android.parser.SteamControllerState
 import kotlin.math.abs
 import rikka.shizuku.Shizuku
 
-// High-level Kotlin API for the virtual Xbox 360 gamepad.
-// Binds UInputService through Shizuku and translates SC2026 state into Xbox events.
+// Existing VXCA output coordinator. It keeps the established input, mapping,
+// calibration, sidecar and backend flows while emitting the selected HID profile.
 class UInputGamepad(private val context: Context, initialProfile: GamepadProfile) {
 
     private val TAG = "UInputGamepad"
@@ -126,26 +127,37 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
         }
     }
 
-    fun bind() {
+    fun bind(backend: InjectionBackend = Prefs.getInjectionBackend(context)) {
         if (bound) return
-        rootDeviceReady = try {
-            rootBackend.start() && rootBackend.canOpen() && rootBackend.createDevice(profile.id)
-        } catch (t: Throwable) {
-            Log.w(TAG, "Root uinput unavailable; using Shizuku fallback: ${t.message}")
-            false
+
+        when (backend) {
+            InjectionBackend.ROOT -> {
+                rootDeviceReady = try {
+                    rootBackend.start() && rootBackend.canOpen() && rootBackend.createDevice(profile.id)
+                } catch (t: Throwable) {
+                    Log.e(TAG, "Selected Root backend failed: ${t.message}")
+                    false
+                }
+                if (rootDeviceReady) {
+                    deviceReady = true
+                    Thread({ applyShowImeOverride() }, "root-ime-override").apply { isDaemon = true; start() }
+                    Log.i(TAG, "Root uinput is the selected and active virtual-device backend")
+                } else {
+                    rootBackend.close()
+                    deviceReady = false
+                    Log.e(TAG, "Selected Root backend is unavailable; Shizuku will not be started automatically")
+                }
+            }
+            InjectionBackend.SHIZUKU -> {
+                rootBackend.close()
+                rootDeviceReady = false
+                deviceReady = false
+                Log.i(TAG, "Starting the explicitly selected Shizuku backend")
+                Shizuku.bindUserService(args, connection)
+                shizukuBound = true
+            }
         }
-        if (rootDeviceReady) {
-            deviceReady = true
-            Thread({ applyShowImeOverride() }, "root-ime-override").apply { isDaemon = true; start() }
-            Log.i(TAG, "Root uinput is the active virtual-device backend")
-        } else {
-            rootBackend.close()
-            Log.i(TAG, "Root uinput unavailable; Shizuku will create the virtual device")
-        }
-        if (!rootDeviceReady) {
-            Shizuku.bindUserService(args, connection)
-            shizukuBound = true
-        }
+
         bound = true
         startRumbleThread()
     }
@@ -298,7 +310,7 @@ class UInputGamepad(private val context: Context, initialProfile: GamepadProfile
         }
     }
 
-    // Push one HID frame from the SC2026 parser, translated to Xbox 360 layout.
+    // Push one normalized controller frame into the selected virtual HID profile.
     fun pushFrame(state: SteamControllerState) {
         if (rootDeviceReady && !rootBackend.isReady) {
             rootDeviceReady = false

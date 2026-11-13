@@ -61,7 +61,7 @@ The app reads supported physical input devices and maps their buttons, sticks, t
 
 ### Important technical limitation
 
-A virtual `uinput` device is a Linux input-core device. Setting a device name or USB-style vendor/product identifiers does **not** make it a genuine Xbox Series X|S or DualSense USB/Bluetooth HID device, nor does it reproduce those controllers' original hardware protocols. Actual recognition depends on the Android build, kernel input stack and the target app.
+The Gamepad profiles are exposed through Linux `uhid` with HID report descriptors and profile-specific input reports: Xbox Series X|S uses the Bluetooth bus identity, while DualSense uses the USB HID identity. This is materially different from merely creating a generic `uinput` device and assigning it a name or VID/PID. Desktop mouse/keyboard sidecars continue to use VXCA's existing `uinput` path. Virtual HID recognition still depends on the Android kernel/input stack and the target app; CODM acceptance is not guaranteed until tested on-device.
 
 In particular, virtual-controller operation does not guarantee that every game — including Call of Duty: Mobile — will accept the device. Compatibility must be verified on the target phone, Android build and game version.
 
@@ -69,9 +69,10 @@ In particular, virtual-controller operation does not guarantee that every game �
 
 - **USB:** Steam Controller devices use the project's dedicated Steam USB path. Other supported USB controllers are read through evdev.
 - **Bluetooth:** Supported paired Bluetooth gamepads can be selected through the app's Bluetooth transport.
-- **Injection backend:** The user must be able to choose either **Root** or **Shizuku** in the existing Settings interface. Root uses the existing root-based injection path; Shizuku uses the existing Shizuku path.
+- **Injection backend:** The user must be able to choose either **Root** or **Shizuku** in the existing Settings interface. Root and Shizuku use the existing VXCA backend/service paths to create the virtual HID device. Both `/dev/uhid` and the existing `/dev/uinput` sidecar path must be accessible for full Gamepad/Desktop functionality.
 - **Explicit selection:** Use only the backend the user selected. If it is unavailable or unauthorized, show a clear status and recovery guidance; do not silently switch to the other backend.
 - **Shared pipeline:** Backend selection changes only how the virtual input device is created/managed. Both backends must feed the same existing controller mapping and virtual-profile pipeline; do not fork or duplicate the mapping engine.
+- **Shizuku compatibility fallback:** If Shizuku cannot create a `uinput` device, the app may retain its existing `injectInputEvent` fallback. The UI/logs must identify this as legacy event injection, not as a system virtual gamepad; games may filter it.
 - **Permission and availability checks:** Check root availability or Shizuku connection/authorization before starting injection. Explain actionable recovery steps when access is missing.
 - **Persistence and status:** Remember the selected backend across app restarts and show the selected/active backend and its readiness in the existing UI.
 - **Hotplug and recovery:** The input pipeline monitors device changes and handles evdev synchronization loss.
