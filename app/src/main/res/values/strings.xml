@@ -39,7 +39,7 @@
     <string name="main_mode_gamepad">Gamepad</string>
     <string name="main_mode_desktop">Desktop</string>
     <string name="main_emulated_controller_label">Emulated controller</string>
-    <string name="main_gamepad_xbox360">Xbox 360</string>
+    <string name="main_gamepad_xbox360">Xbox Series X|S</string>
     <string name="main_gamepad_xboxone">Xbox One</string>
     <string name="main_gamepad_ds4">DualShock 4</string>
     <string name="main_gamepad_dualsense">DualSense</string>
